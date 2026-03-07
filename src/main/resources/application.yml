@@ -81,10 +81,10 @@ ai:
   
   # 阿里云翻译配置
   aliyun:
-    access-key-id: ${ALIYUN_ACCESS_KEY_ID:your-access-key-id}
-    access-key-secret: ${ALIYUN_ACCESS_KEY_SECRET:your-access-key-secret}
-    region: cn-hangzhou
-    endpoint: mt.cn-hangzhou.aliyuncs.com
+    access-key-id: ${ai.aliyun.access-key-id:}
+    access-key-secret: ${ai.aliyun.access-key-secret:}
+    region: ${ai.aliyun.region:cn-hangzhou}
+    endpoint: ${ai.aliyun.endpoint:mt.cn-hangzhou.aliyuncs.com}
 
 # MinIO配置
 minio:

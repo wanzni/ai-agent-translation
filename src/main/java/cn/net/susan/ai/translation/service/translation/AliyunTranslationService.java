@@ -53,7 +53,8 @@ public class AliyunTranslationService implements ThirdPartyTranslator {
                     .setSourceText(request.getSourceText())
                     .setSourceLanguage(convertLanguageCode(request.getSourceLanguage()))
                     .setTargetLanguage(convertLanguageCode(request.getTargetLanguage()))
-                    .setScene("general");
+                    .setScene("general")
+                    .setFormatType("text");
             
             // 调用阿里云翻译API
             TranslateGeneralResponse response = aliyunTranslationClient.translateGeneral(translateRequest);
