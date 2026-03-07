@@ -1,0 +1,1011 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org" th:fragment="layout(title, content, pageStyles, pageScripts)">
+      <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title th:text="${pageTitle != null ? pageTitle + ' - 智能翻译助手' : '智能翻译助手'}">智能翻译助手</title>
+            
+            <!-- Bootstrap CSS -->
+            <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+            <!-- Font Awesome -->
+            <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+            <!-- 自定义样式 -->
+            <style>
+                :root {
+                    --primary-color: #2563eb;
+                    --secondary-color: #64748b;
+                    --success-color: #059669;
+                    --warning-color: #d97706;
+                    --danger-color: #dc2626;
+                    --light-bg: #f8fafc;
+                    --dark-bg: #1e293b;
+                }
+
+                body {
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                    background-color: var(--light-bg);
+                }
+
+                .navbar-brand {
+                    font-weight: 700;
+                    color: var(--primary-color) !important;
+                }
+
+                .navbar {
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                    background-color: white !important;
+                }
+
+                .nav-link {
+                    font-weight: 500;
+                    transition: color 0.3s ease;
+                }
+
+                .nav-link:hover {
+                    color: var(--primary-color) !important;
+                }
+
+                .nav-link.active {
+                    color: var(--primary-color) !important;
+                    font-weight: 600;
+                }
+
+                .card {
+                    border: none;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                    transition: box-shadow 0.3s ease;
+                }
+
+                .card:hover {
+                    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                }
+
+                .btn-primary {
+                    background-color: var(--primary-color);
+                    border-color: var(--primary-color);
+                    font-weight: 500;
+                }
+
+                .btn-primary:hover {
+                    background-color: #1d4ed8;
+                    border-color: #1d4ed8;
+                }
+
+                .footer {
+                    background-color: var(--dark-bg);
+                    color: white;
+                    margin-top: auto;
+                }
+
+                .main-content {
+                    min-height: calc(100vh - 200px);
+                }
+
+                .language-selector {
+                    min-width: 120px;
+                }
+
+                .translation-card {
+                    border-left: 4px solid var(--primary-color);
+                }
+
+                .status-badge {
+                    font-size: 0.75rem;
+                    padding: 0.25rem 0.5rem;
+                }
+
+                .progress-thin {
+                    height: 4px;
+                }
+
+                .sidebar {
+                    background-color: white;
+                    box-shadow: 2px 0 4px rgba(0,0,0,0.1);
+                    min-height: calc(100vh - 76px);
+                }
+
+                .sidebar .nav-link {
+                    color: var(--secondary-color);
+                    padding: 0.75rem 1rem;
+                    border-radius: 0.375rem;
+                    margin: 0.25rem 0;
+                }
+
+                .sidebar .nav-link:hover,
+                .sidebar .nav-link.active {
+                    background-color: var(--light-bg);
+                    color: var(--primary-color);
+                }
+
+                .loading-spinner {
+                    display: none;
+                }
+
+                .loading .loading-spinner {
+                    display: inline-block;
+                }
+
+                .toast-container {
+                    position: fixed;
+                    top: 20px;
+                    right: 20px;
+                    z-index: 1050;
+                }
+
+                @media (max-width: 768px) {
+                    .sidebar {
+                        display: none;
+                    }
+                    
+                    .sidebar.show {
+                        display: block;
+                        position: fixed;
+                        top: 76px;
+                        left: 0;
+                        right: 0;
+                        z-index: 1040;
+                    }
+                }
+                /* 顶部导航用户信息对齐优化 */
+                #navUserLink.nav-link {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.5rem;
+                    padding-top: 0.5rem;
+                    padding-bottom: 0.5rem;
+                }
+                #navUserAvatar {
+                    width: 32px;
+                    height: 32px;
+                    object-fit: cover;
+                    transform: translateY(-2px); /* 轻微上移，和其他链接基线对齐 */
+                }
+                #navUserNickname {
+                    line-height: 1;
+                }
+            </style>
+            
+            <!-- 页面特定样式 -->
+            <th:block th:replace="${pageStyles}"></th:block>
+</head>
+<body>
+    <!-- 导航栏 -->
+            <nav class="navbar navbar-expand-lg navbar-dark sticky-top" style="background: linear-gradient(135deg, var(--primary-color), #3b82f6); box-shadow: 0 2px 10px rgba(37, 99, 235, 0.1);">
+                <div class="container">
+                    <a class="navbar-brand" href="/" th:href="@{/}" style="font-weight: 700; font-size: 1.5rem; color: white !important; text-shadow: 2px 2px 4px rgba(0,0,0,0.8);">
+                <i class="fas fa-language me-2"></i>智能翻译助手
+            </a>
+            
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            
+            <div class="collapse navbar-collapse" id="navbarNav">
+                        <!-- 会员页专用菜单：文本翻译 / 文档翻译 -->
+                        <ul class="navbar-nav" th:if="${activePage == 'membership'}">
+                    <li class="nav-item">
+                                <a class="nav-link fw-bold text-white fs-6" style="text-shadow: 2px 2px 4px rgba(0,0,0,0.8); font-weight: 700; color: white !important;" href="/translate" th:href="@{/translate}">文本翻译</a>
+                    </li>
+                    <li class="nav-item">
+                                <a class="nav-link fw-bold text-white fs-6" style="text-shadow: 2px 2px 4px rgba(0,0,0,0.8); font-weight: 700; color: white !important;" href="/document" th:href="@{/document}">文件翻译</a>
+                    </li>
+                </ul>
+                <!-- 默认菜单：首页锚点与开通会员 -->
+                <ul class="navbar-nav" th:unless="${activePage == 'membership'}">
+                    <li class="nav-item">
+                                <a class="nav-link fw-bold text-white fs-6" style="text-shadow: 2px 2px 4px rgba(0,0,0,0.8); font-weight: 700; color: white !important;" href="/#features" th:href="@{/#features}">在线功能</a>
+                    </li>
+                    <li class="nav-item">
+                                <a class="nav-link fw-bold text-white fs-6" style="text-shadow: 2px 2px 4px rgba(0,0,0,0.8); font-weight: 700; color: white !important;" href="/#translate" th:href="@{/#translate}">在线翻译</a>
+                    </li>
+                    
+                    <li class="nav-item">
+                                <a class="nav-link fw-bold text-white fs-6" style="text-shadow: 2px 2px 4px rgba(0,0,0,0.8); font-weight: 700; color: white !important;" href="/membership" th:href="@{/membership}">开通会员</a>
+                    </li>
+                </ul>
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item ms-lg-3">
+                                <a id="navLoginLink" class="nav-link fw-bold text-white fs-6" style="text-shadow: 2px 2px 4px rgba(0,0,0,0.8); font-weight: 700; color: white !important; cursor: pointer;" data-bs-toggle="modal" data-bs-target="#loginModal">登录</a>
+                    </li>
+                    <li id="navUserInfo" class="nav-item dropdown ms-lg-3 d-none">
+                                <a id="navUserLink" href="#" class="nav-link dropdown-toggle fw-bold text-white fs-6 d-flex align-items-center gap-2" style="text-shadow: 2px 2px 4px rgba(0,0,0,0.8); font-weight: 700; color: white !important;" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <img id="navUserAvatar" src="/img/avatar.png" alt="头像" width="32" height="32" class="rounded-circle border border-light" />
+                                    <span id="navUserNickname">AI用户</span>
+                                </a>
+                                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="navUserLink">
+                                    <li><a class="dropdown-item" href="/profile" th:href="@{/profile}">个人资料</a></li>
+                                    <li><a class="dropdown-item" href="/orders" th:href="@{/orders}">我的订单</a></li>
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li><a id="navLogoutLink" class="dropdown-item" href="#">退出登录</a></li>
+                                </ul>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 登录模态框 -->
+    <div class="modal fade" id="loginModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">手机号登录</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- 错误提示区域 -->
+                    <div id="loginErrorAlert" class="alert alert-danger d-none" role="alert">
+                        <i class="fas fa-exclamation-circle me-2"></i>
+                        <span id="loginErrorText"></span>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">手机号</label>
+                        <input type="text" class="form-control" id="loginPhone" placeholder="+15551234567">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">密码</label>
+                        <input type="password" class="form-control" id="loginPassword" placeholder="至少8位，包含大小写字母和数字">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">手机验证码</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="loginCode" placeholder="6位数字">
+                            <button class="btn btn-outline-primary" type="button" id="sendCodeBtn">获取验证码</button>
+                        </div>
+                        <div id="sendCodeHint" class="form-text">验证码有效期5分钟，发送间隔60秒。</div>
+                    </div>
+                    <div class="text-muted"><small>提示：未注册的手机号请先完成注册。</small></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-link" id="openRegisterBtn">去注册</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" id="loginSubmitBtn">登录</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 注册模态框 -->
+    <div class="modal fade" id="registerModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">手机号注册</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">手机号</label>
+                        <input type="text" class="form-control" id="registerPhone" placeholder="+15551234567">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">密码</label>
+                        <input type="password" class="form-control" id="registerPassword" placeholder="至少8位，包含大小写字母和数字">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">昵称（可选）</label>
+                        <input type="text" class="form-control" id="registerNickname" placeholder="你的昵称">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">手机验证码</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="registerCode" placeholder="6位数字">
+                            <button class="btn btn-outline-primary" type="button" id="sendRegisterCodeBtn">获取验证码</button>
+                        </div>
+                        <div class="form-text">验证码有效期5分钟，发送间隔60秒。</div>
+                    </div>
+                    <div class="text-muted"><small>注册成功后请使用手机号和密码登录。</small></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" id="registerSubmitBtn">注册</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 主要内容区域 -->
+            <div class="container-fluid p-0">
+        <div class="row">
+            <!-- 主内容 -->
+                    <div class="col-12">
+                        <main class="main-content">
+
+
+                    <!-- 消息提示 -->
+                    <div th:if="${successMessage}" class="alert alert-success alert-dismissible fade show" role="alert">
+                        <i class="fas fa-check-circle me-2"></i>
+                        <span th:text="${successMessage}"></span>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                    
+                    <div th:if="${errorMessage}" class="alert alert-danger alert-dismissible fade show" role="alert">
+                        <i class="fas fa-exclamation-circle me-2"></i>
+                        <span th:text="${errorMessage}"></span>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                    
+                    <div th:if="${warningMessage}" class="alert alert-warning alert-dismissible fade show" role="alert">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        <span th:text="${warningMessage}"></span>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                    
+                    <div th:if="${infoMessage}" class="alert alert-info alert-dismissible fade show" role="alert">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <span th:text="${infoMessage}"></span>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+
+                    <!-- 页面内容 -->
+                            <div th:replace="${content}"></div>
+                </main>
+            </div>
+        </div>
+    </div>
+
+    <!-- 页脚 -->
+            <footer class="footer" style="background: #000000 !important; color: #ffffff !important; padding: 3rem 0 2rem 0; margin-top: 4rem;">
+        <style>
+            .footer * {
+                color: #ffffff !important;
+            }
+            .footer p, .footer a, .footer li {
+                color: #ffffff !important;
+                opacity: 1 !important;
+            }
+            .footer h5, .footer h6 {
+                color: #ffffff !important;
+                font-weight: bold !important;
+            }
+        </style>
+        <div class="container">
+            <div class="row">
+                        <div class="col-lg-4 mb-4">
+                            <h5 class="fw-bold mb-3" style="color: white;">智能翻译助手</h5>
+                            <p style="color: #ffffff !important; font-size: 1rem !important; font-weight: 400 !important; opacity: 1 !important;">基于Spring AI的多语言翻译助手，让语言不再是沟通的障碍。</p>
+                            <div class="d-flex gap-3">
+                                <a href="#" class="text-white"><i class="fab fa-github fa-lg"></i></a>
+                                <a href="#" class="text-white"><i class="fab fa-twitter fa-lg"></i></a>
+                                <a href="#" class="text-white"><i class="fab fa-linkedin fa-lg"></i></a>
+                            </div>
+                        </div>
+                        <div class="col-lg-2 col-md-6 mb-4">
+                            <h6 class="fw-bold mb-3" style="color: white;">在线产品</h6>
+                            <ul class="list-unstyled">
+                                <li class="mb-2"><a href="#" class="text-decoration-none" style="color: #ffffff !important; font-size: 0.95rem !important; font-weight: 400 !important; opacity: 1 !important;">在线文本翻译</a></li>
+                                <li class="mb-2"><a href="#" class="text-decoration-none" style="color: #ffffff !important; font-size: 0.95rem !important; font-weight: 400 !important; opacity: 1 !important;">云端文档翻译</a></li>
+                                <li class="mb-2"><a href="#" class="text-decoration-none" style="color: #ffffff !important; font-size: 0.95rem !important; font-weight: 400 !important; opacity: 1 !important;">实时对话翻译</a></li>
+                                <li class="mb-2"><a href="#" class="text-decoration-none" style="color: #ffffff !important; font-size: 0.95rem !important; font-weight: 400 !important; opacity: 1 !important;">云端术语库</a></li>
+                            </ul>
+                        </div>
+                        <div class="col-lg-2 col-md-6 mb-4">
+                            <h6 class="fw-bold mb-3" style="color: white;">支持</h6>
+                            <ul class="list-unstyled">
+                                <li class="mb-2"><a href="#" class="text-decoration-none" style="color: #ffffff !important; font-size: 0.95rem !important; font-weight: 400 !important; opacity: 1 !important;">帮助中心</a></li>
+                                <li class="mb-2"><a href="#" class="text-decoration-none" style="color: #ffffff !important; font-size: 0.95rem !important; font-weight: 400 !important; opacity: 1 !important;">API文档</a></li>
+                                <li class="mb-2"><a href="#" class="text-decoration-none" style="color: #ffffff !important; font-size: 0.95rem !important; font-weight: 400 !important; opacity: 1 !important;">开发者</a></li>
+                                <li class="mb-2"><a href="#" class="text-decoration-none" style="color: #ffffff !important; font-size: 0.95rem !important; font-weight: 400 !important; opacity: 1 !important;">社区</a></li>
+                            </ul>
+                </div>
+                        <div class="col-lg-2 col-md-6 mb-4">
+                            <h6 class="fw-bold mb-3" style="color: white;">公司</h6>
+                    <ul class="list-unstyled">
+                                <li class="mb-2"><a href="#" class="text-decoration-none" style="color: #ffffff !important; font-size: 0.95rem !important; font-weight: 400 !important; opacity: 1 !important;">关于我们</a></li>
+                                <li class="mb-2"><a href="#" class="text-decoration-none" style="color: #ffffff !important; font-size: 0.95rem !important; font-weight: 400 !important; opacity: 1 !important;">新闻动态</a></li>
+                                <li class="mb-2"><a href="#" class="text-decoration-none" style="color: #ffffff !important; font-size: 0.95rem !important; font-weight: 400 !important; opacity: 1 !important;">招聘</a></li>
+                                
+                    </ul>
+                </div>
+                        <div class="col-lg-2 col-md-6 mb-4">
+                            <h6 class="fw-bold mb-3" style="color: white;">法律</h6>
+                    <ul class="list-unstyled">
+                                <li class="mb-2"><a href="#" class="text-decoration-none" style="color: #ffffff !important; font-size: 0.95rem !important; font-weight: 400 !important; opacity: 1 !important;">隐私政策</a></li>
+                                <li class="mb-2"><a href="#" class="text-decoration-none" style="color: #ffffff !important; font-size: 0.95rem !important; font-weight: 400 !important; opacity: 1 !important;">服务条款</a></li>
+                                <li class="mb-2"><a href="#" class="text-decoration-none" style="color: #ffffff !important; font-size: 0.95rem !important; font-weight: 400 !important; opacity: 1 !important;">Cookie政策</a></li>
+                    </ul>
+                </div>
+            </div>
+                    <hr class="my-4 border-secondary">
+            <div class="row align-items-center">
+                <div class="col-md-6">
+                            <p class="mb-0" style="color: #ffffff !important; font-size: 0.95rem !important; font-weight: 400 !important; opacity: 1 !important;">&copy; 2024 智能翻译助手. 保留所有权利.</p>
+                </div>
+                <div class="col-md-6 text-md-end">
+                            <p class="mb-0" style="color: #ffffff !important; font-size: 0.95rem !important; font-weight: 400 !important; opacity: 1 !important;">基于 Spring AI 云端构建</p>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Toast 容器 -->
+    <div class="toast-container"></div>
+
+    <!-- 加载遮罩 -->
+    <div id="loadingOverlay" class="position-fixed top-0 start-0 w-100 h-100 d-none" style="background: rgba(0,0,0,0.5); z-index: 9999;">
+        <div class="d-flex justify-content-center align-items-center h-100">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">加载中...</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- jQuery -->
+    <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+    
+    <!-- 通用JavaScript -->
+    <script>
+        // 全局工具函数
+        const Utils = {
+            // 显示Toast消息
+            showToast: function(message, type = 'info') {
+                const toastHtml = `
+                    <div class="toast align-items-center text-white bg-${type} border-0" role="alert">
+                        <div class="d-flex">
+                            <div class="toast-body">${message}</div>
+                            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+                        </div>
+                    </div>
+                `;
+                const toastElement = $(toastHtml).appendTo('.toast-container');
+                const toast = new bootstrap.Toast(toastElement[0]);
+                toast.show();
+                
+                // 自动移除DOM元素
+                toastElement.on('hidden.bs.toast', function() {
+                    $(this).remove();
+                });
+            },
+
+            // 显示加载遮罩
+            showLoading: function() {
+                $('#loadingOverlay').removeClass('d-none');
+            },
+
+            // 隐藏加载遮罩
+            hideLoading: function() {
+                $('#loadingOverlay').addClass('d-none');
+            },
+
+            // 格式化文件大小
+            formatFileSize: function(bytes) {
+                if (bytes === 0) return '0 B';
+                const k = 1024;
+                const sizes = ['B', 'KB', 'MB', 'GB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+            },
+
+            // 格式化时间
+            formatDuration: function(milliseconds) {
+                const seconds = Math.floor(milliseconds / 1000);
+                if (seconds < 60) return seconds + '秒';
+                const minutes = Math.floor(seconds / 60);
+                if (minutes < 60) return minutes + '分' + (seconds % 60) + '秒';
+                const hours = Math.floor(minutes / 60);
+                return hours + '小时' + (minutes % 60) + '分';
+            },
+
+            // AJAX错误处理
+            handleAjaxError: function(xhr, status, error) {
+                let message = '操作失败';
+                if (xhr.responseJSON && xhr.responseJSON.message) {
+                    message = xhr.responseJSON.message;
+                } else if (xhr.responseText) {
+                    try {
+                        const response = JSON.parse(xhr.responseText);
+                        message = response.message || message;
+                    } catch (e) {
+                        message = xhr.responseText;
+                    }
+                }
+                Utils.showToast(message, 'danger');
+                Utils.hideLoading();
+            }
+        };
+
+        // 页面加载完成后的初始化
+        $(document).ready(function() {
+            // 自动隐藏alert消息
+            setTimeout(function() {
+                $('.alert').fadeOut();
+            }, 5000);
+
+            // 表单提交时显示加载状态
+            $('form').on('submit', function() {
+                const submitBtn = $(this).find('button[type="submit"]');
+                if (submitBtn.length) {
+                    submitBtn.prop('disabled', true);
+                    submitBtn.find('.loading-spinner').show();
+                }
+            });
+
+            // 文件上传预览
+            $('input[type="file"]').on('change', function() {
+                const file = this.files[0];
+                if (file) {
+                    const fileInfo = $(this).siblings('.file-info');
+                    if (fileInfo.length) {
+                        fileInfo.html(`
+                            <small class="text-muted">
+                                <i class="fas fa-file me-1"></i>
+                                ${file.name} (${Utils.formatFileSize(file.size)})
+                            </small>
+                        `);
+                    }
+                }
+            });
+        });
+
+        // 简单的手机号与密码校验
+        function validatePhone(phone) {
+            return /^[+]?\d{6,20}$/.test((phone || '').trim());
+        }
+        function validatePassword(pwd) {
+            const s = (pwd || '').trim();
+            if (s.length < 8) return false;
+            const hasLower = /[a-z]/.test(s);
+            const hasUpper = /[A-Z]/.test(s);
+            const hasDigit = /\d/.test(s);
+            return hasLower && hasUpper && hasDigit;
+        }
+        function validateNickname(nick) {
+            const s = (nick || '').trim();
+            return s.length <= 100;
+        }
+
+        // 在登录模态框中显示错误信息
+        function showLoginError(message) {
+            const errorAlert = document.getElementById('loginErrorAlert');
+            const errorText = document.getElementById('loginErrorText');
+            if (errorAlert && errorText) {
+                errorText.textContent = message;
+                errorAlert.classList.remove('d-none');
+                // 滚动到错误提示区域
+                errorAlert.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        }
+
+        // 隐藏登录错误提示
+        function hideLoginError() {
+            const errorAlert = document.getElementById('loginErrorAlert');
+            if (errorAlert) {
+                errorAlert.classList.add('d-none');
+            }
+        }
+
+        async function handleLogin() {
+            // 先隐藏之前的错误提示
+            hideLoginError();
+            
+            try {
+                const phone = (document.getElementById('loginPhone')?.value || '').trim();
+                const password = (document.getElementById('loginPassword')?.value || '').trim();
+                const code = (document.getElementById('loginCode')?.value || '').trim();
+                
+                // 验证手机号
+                if (!phone) {
+                    showLoginError('请输入手机号');
+                    return;
+                }
+                if (!validatePhone(phone)) {
+                    showLoginError('手机号格式不正确');
+                    return;
+                }
+                
+                // 验证密码（可选，如果提供则进行双重验证）
+                if (password && password.length > 0) {
+                    if (password.length < 6 || password.length > 64) {
+                        showLoginError('密码长度需在6-64位之间');
+                        return;
+                    }
+                }
+                
+                // 验证验证码
+                if (!code) {
+                    showLoginError('请输入验证码');
+                    return;
+                }
+                if (!/^\d{4,8}$/.test(code)) {
+                    showLoginError('验证码格式不正确，请输入4-8位数字');
+                    return;
+                }
+                
+                Utils.showLoading();
+                const res = await fetch('/api/auth/login/phone-code', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        phone: phone, 
+                        password: password, 
+                        code: code 
+                    })
+                });
+                
+                const json = await res.json();
+                
+                // 检查HTTP状态码和响应内容
+                if (!res.ok || !json || json.success === false) {
+                    let errorMessage = '登录失败';
+                    
+                    // 优先使用 data 字段中的错误信息（无论是字符串还是对象）
+                    if (json && json.data) {
+                        if (typeof json.data === 'string') {
+                            // data 是字符串，直接使用
+                            errorMessage = json.data.trim();
+                        } else if (typeof json.data === 'object') {
+                            // data 是对象，可能是验证错误格式: { fieldName: "errorMessage" }
+                            const fieldErrors = Object.entries(json.data)
+                                .map(([field, msg]) => {
+                                    // 将字段名转换为中文
+                                    const fieldNames = {
+                                        'phone': '手机号',
+                                        'password': '密码',
+                                        'code': '验证码'
+                                    };
+                                    const fieldName = fieldNames[field] || field;
+                                    return `${fieldName}: ${msg}`;
+                                })
+                                .join('；');
+                            if (fieldErrors) {
+                                errorMessage = fieldErrors;
+                            } else if (json.data.message) {
+                                errorMessage = json.data.message;
+                            }
+                        }
+                    }
+                    
+                    // 如果 data 字段没有提供有效信息，则使用 message 字段
+                    if (errorMessage === '登录失败' && json && json.message) {
+                        errorMessage = json.message;
+                        // 如果为"非法参数: 具体原因"形式，仅取冒号后的部分
+                        if (errorMessage.includes(':')) {
+                            const tail = errorMessage.split(':').pop().trim();
+                            if (tail) errorMessage = tail;
+                        }
+                    }
+                    
+                    // 如果仍然没有有效信息，使用默认错误消息
+                    if (errorMessage === '登录失败') {
+                        if (res.status === 400) {
+                            errorMessage = '请求参数错误，请检查输入信息';
+                        } else {
+                            errorMessage = '登录失败，请稍后重试';
+                        }
+                    }
+                    
+                    // 在登录模态框中显示错误信息，而不是使用全局Toast
+                    showLoginError(errorMessage);
+                    Utils.hideLoading();
+                    return;
+                }
+                const data = json.data || {};
+                if (data.token) {
+                    localStorage.setItem('authToken', data.token);
+                    try {
+                        const maxAge = (data.expiresIn && Number(data.expiresIn)) ? Number(data.expiresIn) : (7*24*3600);
+                        document.cookie = `auth_token=${data.token};path=/;max-age=${maxAge}`;
+                    } catch (e) { /* ignore cookie set error */ }
+                }
+                if (data.user) localStorage.setItem('authUser', JSON.stringify(data.user));
+                // 登录成功，隐藏错误提示
+                hideLoginError();
+                Utils.showToast('登录成功', 'success');
+                updateNavUserInfo(data.user);
+                const modalEl = document.getElementById('loginModal');
+                bootstrap.Modal.getInstance(modalEl)?.hide();
+                // 登录成功后统一跳转到首页
+                try { window.location.assign('/'); } catch (e) { /* ignore */ }
+            } catch (e) {
+                // 网络错误也在模态框中显示
+                showLoginError('网络或服务器错误：' + (e.message || '请检查网络连接'));
+            } finally {
+                Utils.hideLoading();
+            }
+        }
+
+        // 读取 Cookie 中的键值
+        function getCookie(name) {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return parts.pop().split(';').shift();
+            return null;
+        }
+
+        // 获取认证Token（Cookie优先，其次localStorage）
+        function getAuthToken() {
+            const fromCookie = getCookie('auth_token');
+            if (fromCookie && fromCookie.trim()) return fromCookie.trim();
+            const fromLocal = localStorage.getItem('authToken');
+            return (fromLocal && fromLocal.trim()) ? fromLocal.trim() : null;
+        }
+
+        // 全局拦截：默认不对401进行跳转，仅在用户交互时由 authorizedFetch 控制弹窗
+        (function(){
+            const originalFetch = window.fetch;
+            window.fetch = async function(...args) {
+                const res = await originalFetch.apply(this, args);
+                // 保持静默，不自动弹窗或重定向，避免首页未点击时弹出登录
+                return res;
+            };
+        })();
+
+        // 包装fetch，自动附加Authorization头
+        async function authorizedFetch(url, options) {
+            const token = getAuthToken();
+            const opts = options || {};
+            const promptOn401 = !!opts.authPromptOn401; // 自定义标志：仅在用户交互时弹窗
+            // 不将自定义标志传入 fetch
+            const fetchOptions = Object.assign({}, opts);
+            delete fetchOptions.authPromptOn401;
+            fetchOptions.headers = Object.assign({}, fetchOptions.headers || {});
+            if (token) {
+                fetchOptions.headers['Authorization'] = `Bearer ${token}`;
+            }
+            // 附加用户ID头，作为后端的兜底解析
+            try {
+                const authUser = JSON.parse(localStorage.getItem('authUser') || 'null');
+                if (authUser && authUser.id) {
+                    fetchOptions.headers['X-User-Id'] = String(authUser.id);
+                }
+            } catch (_) {}
+            const resp = await fetch(url, fetchOptions);
+            // 仅在显式要求时弹登录窗，默认不弹
+            if (promptOn401 && resp && resp.status === 401) {
+                try { Utils.showToast('请先登录后再进行此操作', 'warning'); } catch (e) {}
+                try {
+                    const loginEl = document.getElementById('loginModal');
+                    if (loginEl) {
+                        const m = bootstrap.Modal.getInstance(loginEl) || new bootstrap.Modal(loginEl);
+                        m.show();
+                    } else {
+                        window.location.assign('/');
+                    }
+                } catch (e) {}
+            }
+            return resp;
+        }
+
+        function updateNavUserInfo(passedUser) {
+            try {
+                const user = passedUser || (JSON.parse(localStorage.getItem('authUser') || 'null')) || null;
+                const loginLink = document.getElementById('navLoginLink');
+                const userInfo = document.getElementById('navUserInfo');
+                const avatarEl = document.getElementById('navUserAvatar');
+                const nickEl = document.getElementById('navUserNickname');
+                if (!loginLink || !userInfo || !avatarEl || !nickEl) return;
+
+                if (user) {
+                    const nickname = user.nickname && user.nickname.trim() ? user.nickname.trim() : 'AI用户';
+                    const defaultRealAvatar = 'https://source.unsplash.com/64x64/?chinese,woman,portrait,young';
+                    const avatarUrl = (user.avatarUrl && user.avatarUrl.trim())
+                        ? user.avatarUrl.trim()
+                        : defaultRealAvatar;
+                    avatarEl.onerror = () => { avatarEl.onerror = null; avatarEl.src = '/img/avatar.png'; };
+                    avatarEl.src = avatarUrl;
+                    nickEl.textContent = nickname;
+                    loginLink.classList.add('d-none');
+                    loginLink.removeAttribute('data-bs-toggle');
+                    loginLink.removeAttribute('data-bs-target');
+                    userInfo.classList.remove('d-none');
+                } else {
+                    // 未登录状态
+                    userInfo.classList.add('d-none');
+                    loginLink.classList.remove('d-none');
+                    loginLink.setAttribute('data-bs-toggle', 'modal');
+                    loginLink.setAttribute('data-bs-target', '#loginModal');
+                }
+            } catch (e) {
+                // 安全降级：保持登录入口
+                const loginLink = document.getElementById('navLoginLink');
+                const userInfo = document.getElementById('navUserInfo');
+                if (userInfo) userInfo.classList.add('d-none');
+                if (loginLink) loginLink.classList.remove('d-none');
+            }
+        }
+
+        function setSendBtnState(disabled, text) {
+            const b = document.getElementById('sendCodeBtn');
+            if (!b) return;
+            b.disabled = disabled;
+            if (text) b.textContent = text;
+        }
+
+        async function sendLoginCode() {
+            const phone = document.getElementById('loginPhone')?.value || '';
+            if (!validatePhone(phone)) {
+                Utils.showToast('请输入有效的手机号', 'warning');
+                return;
+            }
+            setSendBtnState(true, '发送中...');
+            try {
+                const res = await fetch('/api/auth/code/phone', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phone })
+                });
+                const json = await res.json();
+                const data = json?.data || json;
+                if (!res.ok || (json?.success === false)) {
+                    Utils.showToast(json?.message || '验证码发送失败', 'danger');
+                    setSendBtnState(false, '获取验证码');
+                    return;
+                }
+                Utils.showToast(data.message || '验证码已发送', 'success');
+                let remain = (data.cooldownSeconds ?? 60);
+                setSendBtnState(true, `${remain}s后可重发`);
+                const timer = setInterval(() => {
+                    remain -= 1;
+                    if (remain <= 0) {
+                        clearInterval(timer);
+                        setSendBtnState(false, '获取验证码');
+                    } else {
+                        setSendBtnState(true, `${remain}s后可重发`);
+                    }
+                }, 1000);
+            } catch (e) {
+                Utils.showToast('验证码发送失败', 'danger');
+                setSendBtnState(false, '获取验证码');
+            }
+        }
+
+        async function handleLogout() {
+            try {
+                // 调用后端登出，清理服务端会话与Cookie
+                try {
+                    await fetch('/api/auth/logout', { method: 'POST' });
+                } catch (_) {}
+                // 前端本地清理：token与用户信息
+                localStorage.removeItem('authToken');
+                localStorage.removeItem('authUser');
+                // 删除Cookie（与登录时同路径）
+                try { document.cookie = 'auth_token=;path=/;max-age=0'; } catch (e) {}
+                Utils.showToast('已退出登录', 'info');
+            } catch (e) {
+                // ignore
+            } finally {
+                updateNavUserInfo(null);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // 登录模态框打开时清除错误提示
+            const loginModal = document.getElementById('loginModal');
+            if (loginModal) {
+                loginModal.addEventListener('show.bs.modal', function () {
+                    hideLoginError();
+                    // 清除输入框
+                    const phoneInput = document.getElementById('loginPhone');
+                    const passwordInput = document.getElementById('loginPassword');
+                    const codeInput = document.getElementById('loginCode');
+                    if (phoneInput) phoneInput.value = '';
+                    if (passwordInput) passwordInput.value = '';
+                    if (codeInput) codeInput.value = '';
+                });
+            }
+            
+            const btn = document.getElementById('loginSubmitBtn');
+            if (btn) btn.addEventListener('click', handleLogin);
+            const sendBtn = document.getElementById('sendCodeBtn');
+            if (sendBtn) sendBtn.addEventListener('click', sendLoginCode);
+            const openRegBtn = document.getElementById('openRegisterBtn');
+            if (openRegBtn) openRegBtn.addEventListener('click', () => {
+                const loginEl = document.getElementById('loginModal');
+                const regEl = document.getElementById('registerModal');
+                bootstrap.Modal.getInstance(loginEl)?.hide();
+                new bootstrap.Modal(regEl).show();
+                const lp = document.getElementById('loginPhone')?.value || '';
+                const rp = document.getElementById('registerPhone');
+                if (rp && lp) rp.value = lp;
+            });
+            const regBtn = document.getElementById('registerSubmitBtn');
+            if (regBtn) regBtn.addEventListener('click', handleRegister);
+            const sendRegBtn = document.getElementById('sendRegisterCodeBtn');
+            if (sendRegBtn) sendRegBtn.addEventListener('click', sendRegisterCode);
+
+            const logoutLink = document.getElementById('navLogoutLink');
+            if (logoutLink) logoutLink.addEventListener('click', (e) => { e.preventDefault(); handleLogout(); });
+
+            // 页面加载时根据本地存储更新右上角头像与昵称
+            updateNavUserInfo();
+        });
+
+        async function handleRegister() {
+            try {
+                const phone = document.getElementById('registerPhone')?.value || '';
+                const password = document.getElementById('registerPassword')?.value || '';
+                const nickname = document.getElementById('registerNickname')?.value || '';
+                const code = document.getElementById('registerCode')?.value || '';
+                if (!validatePhone(phone)) {
+                    Utils.showToast('手机号格式不正确', 'warning');
+                    return;
+                }
+                if (!validatePassword(password)) {
+                    Utils.showToast('密码至少8位，需包含大小写字母和数字', 'warning');
+                    return;
+                }
+                if (!validateNickname(nickname)) {
+                    Utils.showToast('昵称长度不能超过100个字符', 'warning');
+                    return;
+                }
+                if (!/^\d{4,8}$/.test(code)) {
+                    Utils.showToast('请输入有效的手机验证码', 'warning');
+                    return;
+                }
+                Utils.showLoading();
+                const res = await fetch('/api/auth/register/phone-code', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phone, password, nickname, code })
+                });
+                const json = await res.json();
+                if (!json || json.success === false) {
+                    Utils.showToast(json?.message || '注册失败', 'danger');
+                    return;
+                }
+                Utils.showToast('注册成功，请登录', 'success');
+                const regEl = document.getElementById('registerModal');
+                bootstrap.Modal.getInstance(regEl)?.hide();
+                const loginEl = document.getElementById('loginModal');
+                new bootstrap.Modal(loginEl).show();
+                const lp = document.getElementById('loginPhone');
+                if (lp) lp.value = phone;
+            } catch (e) {
+                Utils.showToast('网络或服务器错误', 'danger');
+            } finally {
+                Utils.hideLoading();
+            }
+        }
+
+        function setSendRegisterBtnState(disabled, text) {
+            const b = document.getElementById('sendRegisterCodeBtn');
+            if (!b) return;
+            b.disabled = disabled;
+            if (text) b.textContent = text;
+        }
+
+        async function sendRegisterCode() {
+            const phone = document.getElementById('registerPhone')?.value || '';
+            if (!validatePhone(phone)) {
+                Utils.showToast('请输入有效的手机号', 'warning');
+                return;
+            }
+            setSendRegisterBtnState(true, '发送中...');
+            try {
+                const res = await fetch('/api/auth/code/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phone })
+                });
+                const json = await res.json();
+                const data = json?.data || json;
+                if (!res.ok || (json?.success === false)) {
+                    Utils.showToast(json?.message || '验证码发送失败', 'danger');
+                    setSendRegisterBtnState(false, '获取验证码');
+                    return;
+                }
+                Utils.showToast(data.message || '验证码已发送', 'success');
+                let remain = (data.cooldownSeconds ?? 60);
+                setSendRegisterBtnState(true, `${remain}s后可重发`);
+                const timer = setInterval(() => {
+                    remain -= 1;
+                    if (remain <= 0) {
+                        clearInterval(timer);
+                        setSendRegisterBtnState(false, '获取验证码');
+                    } else {
+                        setSendRegisterBtnState(true, `${remain}s后可重发`);
+                    }
+                }, 1000);
+            } catch (e) {
+                Utils.showToast('验证码发送失败', 'danger');
+                setSendRegisterBtnState(false, '获取验证码');
+            }
+        }
+    </script>
+    
+    <!-- 页面特定脚本 -->
+    <th:block th:replace="${pageScripts}"></th:block>
+    </body>
+</html>

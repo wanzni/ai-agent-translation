@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout/base :: layout(~{::title}, ~{::content}, ~{::page-styles}, ~{::page-scripts})}">
+<head>
+    <title>翻译历史 - 智能翻译助手</title>
+    
+    <!-- 页面特定样式 -->
+    <th:block th:fragment="page-styles">
+        <style>
+            .history-container {
+                max-width: 1200px;
+                margin: 0 auto;
+            }
+
+            .history-card {
+                background: white;
+                border-radius: 0.75rem;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                overflow: hidden;
+            }
+
+            .history-header {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 1.5rem;
+            }
+
+            .search-box {
+                background: #f8fafc;
+                border-radius: 0.5rem;
+                padding: 1.5rem;
+                margin-bottom: 1.5rem;
+            }
+
+            .history-table {
+                border-collapse: separate;
+                border-spacing: 0;
+                width: 100%;
+            }
+
+            .history-table th,
+            .history-table td {
+                padding: 1rem;
+                text-align: left;
+                border-bottom: 1px solid #e2e8f0;
+            }
+
+            .history-table th {
+                background: #f1f5f9;
+                font-weight: 600;
+            }
+
+            .history-table tr:last-child td {
+                border-bottom: none;
+            }
+
+            .history-table tr:hover td {
+                background: #f8fafc;
+            }
+
+            .source-text,
+            .translated-text {
+                max-width: 200px;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+
+            .action-buttons .btn {
+                padding: 0.25rem 0.5rem;
+                font-size: 0.875rem;
+            }
+
+            .language-pair {
+                display: inline-block;
+                background: #e2e8f0;
+                padding: 0.25rem 0.5rem;
+                border-radius: 0.25rem;
+                font-size: 0.875rem;
+            }
+
+            .engine-badge {
+                display: inline-block;
+                padding: 0.25rem 0.5rem;
+                border-radius: 0.25rem;
+                font-size: 0.75rem;
+                font-weight: 500;
+            }
+
+            .engine-google {
+                background: #4285f4;
+                color: white;
+            }
+
+            .engine-baidu {
+                background: #2932e1;
+                color: white;
+            }
+
+            .engine-deepl {
+                background: #0f2b46;
+                color: white;
+            }
+
+            .engine-tencent {
+                background: #0065ff;
+                color: white;
+            }
+
+            .quality-score {
+                display: inline-block;
+                width: 80px;
+                height: 8px;
+                background: #e2e8f0;
+                border-radius: 4px;
+                overflow: hidden;
+            }
+
+            .quality-score-fill {
+                height: 100%;
+                border-radius: 4px;
+            }
+
+            .quality-high {
+                background: #10b981;
+            }
+
+            .quality-medium {
+                background: #f59e0b;
+            }
+
+            .quality-low {
+                background: #ef4444;
+            }
+        </style>
+    </th:block>
+</head>
+
+<body>
+    <div th:fragment="content">
+        <div class="history-container">
+            <!-- 页面标题 -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1 class="h3 mb-0">翻译历史</h1>
+                <button class="btn btn-danger">
+                    <i class="fas fa-trash-alt me-1"></i>清空历史
+                </button>
+            </div>
+
+            <!-- 搜索框 -->
+            <div class="search-box">
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <label class="form-label">源文本</label>
+                        <input type="text" class="form-control" placeholder="搜索源文本">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">目标文本</label>
+                        <input type="text" class="form-control" placeholder="搜索目标文本">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">语言对</label>
+                        <select class="form-select">
+                            <option value="">全部语言对</option>
+                            <option value="en-zh">英语 → 中文</option>
+                            <option value="zh-en">中文 → 英语</option>
+                            <option value="ja-zh">日语 → 中文</option>
+                            <option value="zh-ja">中文 → 日语</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">翻译引擎</label>
+                        <select class="form-select">
+                            <option value="">全部引擎</option>
+                            <option value="google">Google</option>
+                            <option value="baidu">百度</option>
+                            <option value="deepl">DeepL</option>
+                            <option value="tencent">腾讯</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">时间范围</label>
+                        <select class="form-select">
+                            <option>最近7天</option>
+                            <option>最近30天</option>
+                            <option>最近90天</option>
+                            <option>全部时间</option>
+                        </select>
+                    </div>
+                    <div class="col-md-12">
+                        <div class="d-flex justify-content-end">
+                            <button class="btn btn-primary me-2">
+                                <i class="fas fa-search me-1"></i>搜索
+                            </button>
+                            <button class="btn btn-outline-secondary">
+                                <i class="fas fa-undo me-1"></i>重置
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 翻译历史列表 -->
+            <div class="history-card">
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="history-table">
+                            <thead>
+                                <tr>
+                                    <th>源文本</th>
+                                    <th>目标文本</th>
+                                    <th>语言对</th>
+                                    <th>翻译引擎</th>
+                                    <th>质量评分</th>
+                                    <th>时间</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td class="source-text">Hello World</td>
+                                    <td class="translated-text">你好世界</td>
+                                    <td><span class="language-pair">EN → ZH</span></td>
+                                    <td><span class="engine-badge engine-google">Google</span></td>
+                                    <td>
+                                        <div class="quality-score">
+                                            <div class="quality-score-fill quality-high" style="width: 95%"></div>
+                                        </div>
+                                    </td>
+                                    <td>2024-01-15 14:30</td>
+                                    <td class="action-buttons">
+                                        <button class="btn btn-sm btn-outline-primary me-1" title="重新翻译">
+                                            <i class="fas fa-sync"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-info me-1" title="查看详情">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-danger" title="删除">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td class="source-text">Good morning, how are you today?</td>
+                                    <td class="translated-text">早上好，你今天怎么样？</td>
+                                    <td><span class="language-pair">EN → ZH</span></td>
+                                    <td><span class="engine-badge engine-baidu">百度</span></td>
+                                    <td>
+                                        <div class="quality-score">
+                                            <div class="quality-score-fill quality-high" style="width: 90%"></div>
+                                        </div>
+                                    </td>
+                                    <td>2024-01-15 14:25</td>
+                                    <td class="action-buttons">
+                                        <button class="btn btn-sm btn-outline-primary me-1" title="重新翻译">
+                                            <i class="fas fa-sync"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-info me-1" title="查看详情">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-danger" title="删除">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td class="source-text">Thank you very much for your help.</td>
+                                    <td class="translated-text">非常感谢您的帮助。</td>
+                                    <td><span class="language-pair">EN → ZH</span></td>
+                                    <td><span class="engine-badge engine-deepl">DeepL</span></td>
+                                    <td>
+                                        <div class="quality-score">
+                                            <div class="quality-score-fill quality-high" style="width: 98%"></div>
+                                        </div>
+                                    </td>
+                                    <td>2024-01-15 14:20</td>
+                                    <td class="action-buttons">
+                                        <button class="btn btn-sm btn-outline-primary me-1" title="重新翻译">
+                                            <i class="fas fa-sync"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-info me-1" title="查看详情">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-danger" title="删除">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 分页 -->
+            <nav class="d-flex justify-content-end mt-4">
+                <ul class="pagination">
+                    <li class="page-item disabled">
+                        <a class="page-link" href="#" tabindex="-1">上一页</a>
+                    </li>
+                    <li class="page-item active">
+                        <a class="page-link" href="#">1</a>
+                    </li>
+                    <li class="page-item">
+                        <a class="page-link" href="#">2</a>
+                    </li>
+                    <li class="page-item">
+                        <a class="page-link" href="#">3</a>
+                    </li>
+                    <li class="page-item">
+                        <a class="page-link" href="#">下一页</a>
+                    </li>
+                </ul>
+            </nav>
+        </div>
+    </div>
+
+    <!-- 页面特定脚本 -->
+    <th:block th:fragment="page-scripts">
+        <script>
+            $(document).ready(function() {
+                // 删除确认
+                $('.btn-outline-danger').on('click', function() {
+                    if (confirm('确定要删除这条翻译记录吗？')) {
+                        $(this).closest('tr').fadeOut();
+                    }
+                });
+            });
+        </script>
+    </th:block>
+</body>
+</html>

@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout/base :: layout(~{::title}, ~{::content}, ~{::page-styles}, ~{::page-scripts})}">
+<head>
+    <title>统计分析 - 智能翻译助手</title>
+    
+    <!-- 页面特定样式 -->
+    <th:block th:fragment="page-styles">
+        <style>
+            .statistics-container {
+                max-width: 1200px;
+                margin: 0 auto;
+            }
+
+            .stats-card {
+                background: white;
+                border-radius: 0.75rem;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                overflow: hidden;
+                margin-bottom: 1.5rem;
+            }
+
+            .stats-header {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 1.5rem;
+            }
+
+            .summary-stats {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                gap: 1.5rem;
+                margin: 1.5rem 0;
+            }
+
+            .stat-card {
+                background: #f8fafc;
+                border-radius: 0.75rem;
+                padding: 1.5rem;
+                text-align: center;
+                transition: transform 0.3s ease;
+            }
+
+            .stat-card:hover {
+                transform: translateY(-5px);
+            }
+
+            .stat-number {
+                font-size: 2rem;
+                font-weight: bold;
+                margin: 0.5rem 0;
+            }
+
+            .stat-label {
+                color: #64748b;
+                font-size: 0.875rem;
+            }
+
+            .chart-container {
+                height: 300px;
+                background: #f8fafc;
+                border-radius: 0.5rem;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin: 1rem 0;
+            }
+
+            .filter-section {
+                background: #f8fafc;
+                border-radius: 0.75rem;
+                padding: 1.5rem;
+                margin-bottom: 1.5rem;
+            }
+
+            .ranking-list {
+                list-style: none;
+                padding: 0;
+                margin: 0;
+            }
+
+            .ranking-item {
+                display: flex;
+                align-items: center;
+                padding: 0.75rem 0;
+                border-bottom: 1px solid #e2e8f0;
+            }
+
+            .ranking-item:last-child {
+                border-bottom: none;
+            }
+
+            .rank-number {
+                width: 30px;
+                height: 30px;
+                border-radius: 50%;
+                background: #e2e8f0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-weight: bold;
+                margin-right: 1rem;
+            }
+
+            .rank-1 {
+                background: #fbbf24;
+                color: white;
+            }
+
+            .rank-2 {
+                background: #94a3b8;
+                color: white;
+            }
+
+            .rank-3 {
+                background: #cd7f32;
+                color: white;
+            }
+
+            .progress-container {
+                flex: 1;
+                margin: 0 1rem;
+            }
+
+            .progress-bar {
+                height: 8px;
+                background: #e2e8f0;
+                border-radius: 4px;
+                overflow: hidden;
+            }
+
+            .progress-fill {
+                height: 100%;
+                background: linear-gradient(90deg, #667eea, #764ba2);
+                border-radius: 4px;
+            }
+        </style>
+    </th:block>
+</head>
+
+<body>
+    <div th:fragment="content">
+        <div class="statistics-container">
+            <!-- 页面标题 -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1 class="h3 mb-0">统计分析</h1>
+                <div class="d-flex gap-2">
+                    <select class="form-select form-select-sm" style="width: auto;">
+                        <option>今日</option>
+                        <option selected>本周</option>
+                        <option>本月</option>
+                        <option>本季度</option>
+                        <option>本年</option>
+                    </select>
+                    <button class="btn btn-outline-primary btn-sm">
+                        <i class="fas fa-download me-1"></i>导出数据
+                    </button>
+                </div>
+            </div>
+
+            <!-- 统计概览 -->
+            <div class="stats-card">
+                <div class="stats-header">
+                    <h2 class="h4 mb-0">数据概览</h2>
+                </div>
+                <div class="card-body">
+                    <div class="summary-stats">
+                        <div class="stat-card">
+                            <i class="fas fa-language fa-2x text-primary"></i>
+                            <div class="stat-number">1,234</div>
+                            <div class="stat-label">总翻译次数</div>
+                        </div>
+                        <div class="stat-card">
+                            <i class="fas fa-file-alt fa-2x text-success"></i>
+                            <div class="stat-number">567</div>
+                            <div class="stat-label">文档翻译数</div>
+                        </div>
+                        <div class="stat-card">
+                            <i class="fas fa-font fa-2x text-info"></i>
+                            <div class="stat-number">89,012</div>
+                            <div class="stat-label">翻译字符数</div>
+                        </div>
+                        <div class="stat-card">
+                            <i class="fas fa-users fa-2x text-warning"></i>
+                            <div class="stat-number">123</div>
+                            <div class="stat-label">活跃用户数</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 筛选区域 -->
+            <div class="filter-section">
+                <h3 class="h5 mb-3">数据筛选</h3>
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <label class="form-label">语言对</label>
+                        <select class="form-select">
+                            <option value="">全部语言对</option>
+                            <option value="en-zh">英语 → 中文</option>
+                            <option value="zh-en">中文 → 英语</option>
+                            <option value="ja-zh">日语 → 中文</option>
+                            <option value="zh-ja">中文 → 日语</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">翻译引擎</label>
+                        <select class="form-select">
+                            <option value="">全部引擎</option>
+                            <option value="google">Google</option>
+                            <option value="baidu">百度</option>
+                            <option value="deepl">DeepL</option>
+                            <option value="tencent">腾讯</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">时间范围</label>
+                        <input type="date" class="form-control">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">结束时间</label>
+                        <input type="date" class="form-control">
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <!-- 翻译次数趋势 -->
+                <div class="col-lg-8">
+                    <div class="stats-card">
+                        <div class="stats-header">
+                            <h2 class="h4 mb-0">翻译次数趋势</h2>
+                        </div>
+                        <div class="card-body">
+                            <div class="chart-container">
+                                <div class="text-center">
+                                    <i class="fas fa-chart-line fa-3x text-muted mb-2"></i>
+                                    <p class="text-muted">翻译次数趋势图表</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 语言对排名 -->
+                <div class="col-lg-4">
+                    <div class="stats-card">
+                        <div class="stats-header">
+                            <h2 class="h4 mb-0">热门语言对排名</h2>
+                        </div>
+                        <div class="card-body">
+                            <ul class="ranking-list">
+                                <li class="ranking-item">
+                                    <div class="rank-number rank-1">1</div>
+                                    <div class="flex-grow-1">英语 → 中文</div>
+                                    <div class="progress-container">
+                                        <div class="progress-bar">
+                                            <div class="progress-fill" style="width: 95%"></div>
+                                        </div>
+                                    </div>
+                                    <div class="ms-2">35%</div>
+                                </li>
+                                <li class="ranking-item">
+                                    <div class="rank-number rank-2">2</div>
+                                    <div class="flex-grow-1">中文 → 英语</div>
+                                    <div class="progress-container">
+                                        <div class="progress-bar">
+                                            <div class="progress-fill" style="width: 80%"></div>
+                                        </div>
+                                    </div>
+                                    <div class="ms-2">28%</div>
+                                </li>
+                                <li class="ranking-item">
+                                    <div class="rank-number rank-3">3</div>
+                                    <div class="flex-grow-1">日语 → 中文</div>
+                                    <div class="progress-container">
+                                        <div class="progress-bar">
+                                            <div class="progress-fill" style="width: 65%"></div>
+                                        </div>
+                                    </div>
+                                    <div class="ms-2">18%</div>
+                                </li>
+                                <li class="ranking-item">
+                                    <div class="rank-number">4</div>
+                                    <div class="flex-grow-1">中文 → 日语</div>
+                                    <div class="progress-container">
+                                        <div class="progress-bar">
+                                            <div class="progress-fill" style="width: 45%"></div>
+                                        </div>
+                                    </div>
+                                    <div class="ms-2">12%</div>
+                                </li>
+                                <li class="ranking-item">
+                                    <div class="rank-number">5</div>
+                                    <div class="flex-grow-1">韩语 → 中文</div>
+                                    <div class="progress-container">
+                                        <div class="progress-bar">
+                                            <div class="progress-fill" style="width: 25%"></div>
+                                        </div>
+                                    </div>
+                                    <div class="ms-2">7%</div>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 引擎使用情况 -->
+            <div class="stats-card">
+                <div class="stats-header">
+                    <h2 class="h4 mb-0">翻译引擎使用情况</h2>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <div class="text-center">
+                            <i class="fas fa-chart-pie fa-3x text-muted mb-2"></i>
+                            <p class="text-muted">翻译引擎使用情况饼图</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 页面特定脚本 -->
+    <th:block th:fragment="page-scripts">
+        <script>
+            $(document).ready(function() {
+                // 图表初始化（模拟）
+                console.log('统计分析图表初始化');
+            });
+        </script>
+    </th:block>
+</body>
+</html>

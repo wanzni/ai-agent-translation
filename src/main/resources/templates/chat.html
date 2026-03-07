@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout/base :: layout(~{::title}, ~{::content}, ~{::page-styles}, ~{::page-scripts})}">
+<head>
+    <title>聊天翻译 - 智能翻译助手</title>
+    
+    <!-- 页面特定样式 -->
+    <th:block th:fragment="page-styles">
+        <style>
+            .chat-container {
+                max-width: 1200px;
+                margin: 0 auto;
+                height: calc(100vh - 200px);
+                display: flex;
+                flex-direction: column;
+            }
+
+            .chat-header {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 1rem;
+                border-radius: 0.75rem 0.75rem 0 0;
+            }
+
+            .chat-messages {
+                flex: 1;
+                overflow-y: auto;
+                padding: 1.5rem;
+                background: #f8fafc;
+                border-left: 1px solid #e2e8f0;
+                border-right: 1px solid #e2e8f0;
+            }
+
+            .message {
+                margin-bottom: 1.5rem;
+                display: flex;
+            }
+
+            .message-sender {
+                font-weight: 600;
+                margin-bottom: 0.25rem;
+                font-size: 0.875rem;
+            }
+
+            .message-content {
+                padding: 0.75rem 1rem;
+                border-radius: 0.75rem;
+                max-width: 80%;
+                word-wrap: break-word;
+            }
+
+            .message-user {
+                justify-content: flex-end;
+            }
+
+            .message-user .message-content {
+                background: #2563eb;
+                color: white;
+                border-bottom-right-radius: 0;
+            }
+
+            .message-ai {
+                justify-content: flex-start;
+            }
+
+            .message-ai .message-content {
+                background: white;
+                border: 1px solid #e2e8f0;
+                border-bottom-left-radius: 0;
+            }
+
+            .chat-input {
+                padding: 1rem;
+                background: white;
+                border-radius: 0 0 0.75rem 0.75rem;
+                border: 1px solid #e2e8f0;
+                border-top: none;
+            }
+
+            .language-selector {
+                background: #f1f5f9;
+                padding: 0.75rem 1rem;
+                border-radius: 0.5rem;
+                margin-bottom: 1rem;
+            }
+
+            .translation-preview {
+                background: #e2e8f0;
+                border-radius: 0.5rem;
+                padding: 1rem;
+                margin-top: 1rem;
+                display: none;
+            }
+
+            .status-indicator {
+                width: 10px;
+                height: 10px;
+                border-radius: 50%;
+                display: inline-block;
+                margin-right: 0.5rem;
+            }
+
+            .status-online {
+                background: #10b981;
+            }
+
+            .status-offline {
+                background: #ef4444;
+            }
+        </style>
+    </th:block>
+</head>
+
+<body>
+    <div th:fragment="content">
+        <div class="chat-container">
+            <!-- 聊天头部 -->
+            <div class="chat-header">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h1 class="h4 mb-0">实时聊天翻译</h1>
+                    <div class="d-flex align-items-center">
+                        <span class="status-indicator status-online"></span>
+                        <span>在线</span>
+                    </div>
+                </div>
+                <div class="mt-2">
+                    <small>与AI助手进行实时对话，自动翻译多语言内容</small>
+                </div>
+            </div>
+
+            <!-- 语言选择器 -->
+            <div class="language-selector">
+                <div class="row align-items-center g-3">
+                    <div class="col-md-5">
+                        <select class="form-select form-select-sm" id="chatSourceLanguage">
+                            <option value="zh">中文</option>
+                            <option value="en" selected>英语</option>
+                            <option value="ja">日语</option>
+                            <option value="ko">韩语</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2 text-center">
+                        <button class="btn btn-sm btn-outline-primary" id="swapLanguages" title="交换语言">
+                            <i class="fas fa-exchange-alt"></i>
+                        </button>
+                    </div>
+                    <div class="col-md-5">
+                        <select class="form-select form-select-sm" id="chatTargetLanguage">
+                            <option value="zh" selected>中文</option>
+                            <option value="en">英语</option>
+                            <option value="ja">日语</option>
+                            <option value="ko">韩语</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 消息区域 -->
+            <div class="chat-messages">
+                <div class="message message-ai">
+                    <div class="flex-grow-1">
+                        <div class="message-sender">AI翻译助手</div>
+                        <div class="message-content">
+                            您好！我是AI翻译助手，可以帮您进行实时聊天翻译。请输入您要翻译的内容。
+                        </div>
+                    </div>
+                </div>
+
+                <div class="message message-user">
+                    <div class="flex-grow-1">
+                        <div class="message-sender">您</div>
+                        <div class="message-content">
+                            Hello, how are you today?
+                        </div>
+                    </div>
+                </div>
+
+                <div class="message message-ai">
+                    <div class="flex-grow-1">
+                        <div class="message-sender">AI翻译助手</div>
+                        <div class="message-content">
+                            你好！我很好，谢谢。你今天怎么样？
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 输入区域 -->
+            <div class="chat-input">
+                <div class="translation-preview">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <small class="text-muted">翻译预览</small>
+                        <button class="btn btn-sm btn-outline-primary">
+                            <i class="fas fa-paper-plane me-1"></i>发送翻译
+                        </button>
+                    </div>
+                    <div class="bg-white p-2 rounded">
+                        你好！我很好，谢谢。你今天怎么样？
+                    </div>
+                </div>
+
+                <div class="input-group">
+                    <input type="text" class="form-control" id="chatInput" placeholder="输入消息...">
+                    <button class="btn btn-primary" id="sendButton" type="button">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+                <div class="mt-2 text-center">
+                    <small class="text-muted">
+                        <i class="fas fa-info-circle me-1"></i>
+                        按Enter发送，Shift+Enter换行
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 页面特定脚本 -->
+    <th:block th:fragment="page-scripts">
+        <script>
+            $(document).ready(function() {
+                // 获取认证token的辅助函数
+                function getAuthToken() {
+                    const fromCookie = (function() {
+                        const value = `; ${document.cookie}`;
+                        const parts = value.split(`; auth_token=`);
+                        if (parts.length === 2) return parts.pop().split(';').shift();
+                        return null;
+                    })();
+                    if (fromCookie && fromCookie.trim()) return fromCookie.trim();
+                    const fromLocal = localStorage.getItem('authToken');
+                    return (fromLocal && fromLocal.trim()) ? fromLocal.trim() : null;
+                }
+
+                const API = {
+                    createSession: function(payload) {
+                        const token = getAuthToken();
+                        const headers = { 'Content-Type': 'application/json' };
+                        if (token) {
+                            headers['Authorization'] = `Bearer ${token}`;
+                        }
+                        return $.ajax({
+                            url: '/api/chat/sessions',
+                            type: 'POST',
+                            headers: headers,
+                            contentType: 'application/json',
+                            data: JSON.stringify(payload)
+                        });
+                    },
+                    streamUrl: function(sessionId, params) {
+                        const q = new URLSearchParams(params);
+                        return `/api/chat/sessions/${sessionId}/stream?${q.toString()}`;
+                    }
+                };
+
+                let currentSessionId = null;
+                const defaultUser = { id: 'guest', name: '游客' };
+
+                // 初始化会话
+                API.createSession({
+                    sessionName: '临时会话',
+                    sourceLanguage: $('#chatSourceLanguage').val(),
+                    targetLanguage: $('#chatTargetLanguage').val(),
+                    createdBy: defaultUser.id,
+                    description: '实时翻译对话'
+                }).done(function(resp) {
+                    const payload = (resp && resp.data) ? resp.data : resp;
+                    currentSessionId = payload && payload.sessionId ? payload.sessionId : null;
+                    if (!currentSessionId) {
+                        Utils.showToast('会话初始化失败：无法获取sessionId', 'danger');
+                    }
+                }).fail(Utils.handleAjaxError);
+
+                // 语言交换
+                $('#swapLanguages').on('click', function() {
+                    const a = $('#chatSourceLanguage').val();
+                    const b = $('#chatTargetLanguage').val();
+                    $('#chatSourceLanguage').val(b);
+                    $('#chatTargetLanguage').val(a);
+                });
+
+                // 回车发送
+                $('#chatInput').on('keypress', function(e) {
+                    if (e.which === 13 && !e.shiftKey) {
+                        e.preventDefault();
+                        sendMessage();
+                    }
+                });
+                // 点击发送
+                $('#sendButton').on('click', function() {
+                    sendMessage();
+                });
+
+                function appendUserMessage(text) {
+                    const userMessage = `
+                        <div class="message message-user">
+                            <div class="flex-grow-1">
+                                <div class="message-sender">您</div>
+                                <div class="message-content">${escapeHtml(text)}</div>
+                            </div>
+                        </div>`;
+                    $('.chat-messages').append(userMessage);
+                }
+
+                function appendAiMessageSkeleton() {
+                    const id = 'ai-msg-' + Date.now();
+                    const aiMessage = `
+                        <div class="message message-ai" id="${id}">
+                            <div class="flex-grow-1">
+                                <div class="message-sender">AI翻译助手</div>
+                                <div class="message-content"></div>
+                            </div>
+                        </div>`;
+                    $('.chat-messages').append(aiMessage);
+                    return id;
+                }
+
+                function sendMessage() {
+                    const input = $('#chatInput');
+                    const message = input.val().trim();
+                    if (!message) return;
+                    if (!currentSessionId) {
+                        Utils.showToast('会话未初始化，稍后重试', 'warning');
+                        return;
+                    }
+
+                    appendUserMessage(message);
+                    input.val('');
+                    $('.chat-messages').scrollTop($('.chat-messages')[0].scrollHeight);
+
+                    // 新增AI消息占位并进行流式填充
+                    const aiId = appendAiMessageSkeleton();
+                    const $aiContent = $('#' + aiId + ' .message-content');
+
+                    const u = JSON.parse(localStorage.getItem('authUser') || 'null');
+                    const params = {
+                        message: message,
+                        sourceLanguage: $('#chatSourceLanguage').val(),
+                        targetLanguage: $('#chatTargetLanguage').val(),
+                        userId: (u && u.id) ? String(u.id) : '',
+                        userName: (u && (u.nickname || u.username)) ? (u.nickname || u.username) : '用户'
+                    };
+                    const url = API.streamUrl(currentSessionId, params);
+
+                    const es = new EventSource(url);
+                    es.addEventListener('start', function(evt) {
+                        // 可根据 messageId 做关联
+                    });
+                    es.addEventListener('delta', function(evt) {
+                        $aiContent.append(document.createTextNode(evt.data));
+                        $('.chat-messages').scrollTop($('.chat-messages')[0].scrollHeight);
+                    });
+                    es.addEventListener('done', function(evt) {
+                        try {
+                            const data = JSON.parse(evt.data);
+                            // 确保最终文本一致（可选）
+                            $aiContent.text(data.translatedText);
+                        } catch (e) {}
+                        es.close();
+                        $('.chat-messages').scrollTop($('.chat-messages')[0].scrollHeight);
+                    });
+                    es.addEventListener('error', function(evt) {
+                        es.close();
+                        Utils.showToast('流式传输错误', 'danger');
+                    });
+                }
+
+                function escapeHtml(str) {
+                    return str.replace(/[&<>"]/g, function(c) {
+                        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];
+                    });
+                }
+
+                // 输入预览切换
+                $('#chatInput').on('input', function() {
+                    const text = $(this).val().trim();
+                    if (text) {
+                        $('.translation-preview').show();
+                    } else {
+                        $('.translation-preview').hide();
+                    }
+                });
+            });
+        </script>
+    </th:block>
+</body>
+</html>

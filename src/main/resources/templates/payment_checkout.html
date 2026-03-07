@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout/base :: layout(~{::title}, ~{::content}, ~{::page-styles}, ~{::page-scripts})}">
+<head>
+    <title>会员支付</title>
+    <th:block th:fragment="page-styles">
+        <style>
+            .pay-option { cursor: pointer; }
+            .pay-option.active { border: 2px solid #0d6efd; }
+            .qr-pane { display: none; }
+            .qr-pane.show { display: block; }
+            #qrCode { width: 220px; height: 220px; margin: 0 auto; }
+        </style>
+    </th:block>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+</head>
+<body>
+<th:block th:fragment="content">
+    <div class="container py-4">
+        <div class="row mb-3">
+            <div class="col-12">
+                <h2 class="fw-bold"><i class="fas fa-wallet me-2"></i>会员支付</h2>
+                <p class="text-muted">请选择一种支付方式完成订单。</p>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-lg-8">
+                <div class="card shadow-sm mb-3">
+                    <div class="card-body">
+                        <h5 class="card-title">订单信息</h5>
+                        <ul class="list-group list-group-flush">
+                            <li class="list-group-item">订单号：<span id="orderNo">-</span></li>
+                            <li class="list-group-item">会员类型：<span id="type">-</span></li>
+                            <li class="list-group-item">价格：<span id="amount">-</span> <span id="currency">CNY</span></li>
+                            <li class="list-group-item">总额度：<span id="periodQuota">-</span> 点</li>
+                            <li class="list-group-item">剩余支付时间：<span id="countdown">--:--</span></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <h5 class="card-title">选择支付方式</h5>
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <div class="card pay-option" data-provider="ALIPAY" data-method="ALIPAY_QR">
+                                    <div class="card-body text-center">
+                                        <i class="fab fa-alipay fa-2x text-primary mb-2"></i>
+                                        <div>支付宝</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card pay-option" data-provider="WECHAT" data-method="WECHAT_QR">
+                                    <div class="card-body text-center">
+                                        <i class="fab fa-weixin fa-2x text-success mb-2"></i>
+                                        <div>微信支付</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card pay-option" data-provider="UNIONPAY" data-method="UNIONPAY_QR">
+                                    <div class="card-body text-center">
+                                        <i class="fas fa-qrcode fa-2x text-danger mb-2"></i>
+                                        <div>银联云闪付</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card pay-option" data-provider="OTHER" data-method="CREDIT_CARD">
+                                    <div class="card-body text-center">
+                                        <i class="far fa-credit-card fa-2x text-secondary mb-2"></i>
+                                        <div>银行卡</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="d-grid mt-3">
+                            <button id="payBtn" class="btn btn-primary" disabled>立即支付</button>
+                            <div id="payStatus" class="alert d-none mt-2" role="alert"></div>
+                            <div id="qrPane" class="qr-pane mt-3">
+                                <div class="card">
+                                    <div class="card-body text-center">
+                                        <h6 class="card-title mb-2">扫码支付</h6>
+                                        <div id="qrCode"></div>
+                                        <div class="small text-muted mt-2">请使用 微信/支付宝 扫码完成支付</div>
+                                        <div class="mt-3 d-flex justify-content-center gap-2">
+                                            <button id="confirmBtn" class="btn btn-success btn-sm" disabled>我已完成支付</button>
+                                            <button id="refreshBtn" class="btn btn-outline-secondary btn-sm">刷新订单状态</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-4">
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <h5 class="card-title">支付须知</h5>
+                        <ul class="list-unstyled mb-0">
+                            <li>支付成功后自动开通会员并跳转到成功页。</li>
+                            <li>若长时间未成功，请刷新重试或联系支持。</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</th:block>
+
+<th:block th:fragment="page-scripts">
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+    <script>
+        (function(){
+            const params = new URLSearchParams(window.location.search);
+            const qsGet = (k, d='') => { const v = params.get(k); return (v && v.trim()) ? v : d; };
+            const orderNo = qsGet('orderNo');
+            const fill = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+            const statusEl = document.getElementById('payStatus');
+            const payBtn = document.getElementById('payBtn');
+            const countdownEl = document.getElementById('countdown');
+            const qrPane = document.getElementById('qrPane');
+            const confirmBtn = document.getElementById('confirmBtn');
+            const refreshBtn = document.getElementById('refreshBtn');
+            const qrCodeEl = document.getElementById('qrCode');
+            let selected = null;
+            const unwrap = (x) => { let r = x; try { while (r && r.data) r = r.data; } catch (_) {} return r; };
+
+            let expiresAtMs = null;
+            let orderStatus = null;
+            let countdownTimer = null;
+            let currentPaymentNo = null;
+            let pollTimer = null;
+
+            function parseLocalDateTime(val) {
+                try {
+                    if (!val) return null;
+                    if (val instanceof Date) return val;
+                    if (typeof val === 'string') {
+                        const s = val.split('.')[0];
+                        const parts = s.split('T');
+                        if (parts.length !== 2) return null;
+                        const [datePart, timePart] = parts;
+                        const [y, m, d] = datePart.split('-').map(n => parseInt(n, 10));
+                        const [hh, mm, ss] = timePart.split(':').map(n => parseInt(n, 10));
+                        return new Date(y, (m - 1), d, hh, mm, ss || 0, 0);
+                    }
+                    return null;
+                } catch (_) { return null; }
+            }
+
+            function startCountdown() {
+                if (!expiresAtMs || !countdownEl) return;
+                if (countdownTimer) clearInterval(countdownTimer);
+                const fmt = (n) => String(n).padStart(2, '0');
+                const tick = () => {
+                    const now = Date.now();
+                    let remain = Math.floor((expiresAtMs - now) / 1000);
+                    if (remain <= 0) {
+                        countdownEl.textContent = '00:00';
+                        payBtn.disabled = true;
+                        statusEl.className = 'alert alert-warning';
+                        statusEl.textContent = '订单已超时，已自动取消或将被取消。';
+                        statusEl.classList.remove('d-none');
+                        clearInterval(countdownTimer);
+                        countdownTimer = null;
+                        return;
+                    }
+                    const m = Math.floor(remain / 60);
+                    const s = remain % 60;
+                    countdownEl.textContent = `${fmt(m)}:${fmt(s)}`;
+                };
+                tick();
+                countdownTimer = setInterval(tick, 1000);
+            }
+
+            async function loadOrder() {
+                if (!orderNo) return;
+                try {
+                    const resp = await fetch(`/api/membership/order/${orderNo}`, { headers: { 'Accept': 'application/json' } });
+                    const api = await resp.json();
+                    const data = unwrap(api);
+                    if (resp.ok) {
+                        const typeMap = { MONTHLY: '包月会员', QUARTERLY: '包季会员', YEARLY: '包年会员' };
+                        fill('orderNo', data.orderNo || orderNo);
+                        fill('type', typeMap[data.type] || data.type || '-');
+                        fill('amount', String(data.amount ?? '-'));
+                        fill('currency', data.currency || 'CNY');
+                        fill('periodQuota', String(data.periodQuota ?? '-'));
+                        orderStatus = (data.status || '').toUpperCase();
+                        const exp = data.expiresAt || null;
+                        const expDt = parseLocalDateTime(exp);
+                        expiresAtMs = expDt ? expDt.getTime() : null;
+                        if (orderStatus === 'PENDING' && expiresAtMs) {
+                            startCountdown();
+                            payBtn.disabled = !selected;
+                            // 若订单仍可支付，继续轮询（用于扫码场景）
+                            startPolling();
+                        } else {
+                            payBtn.disabled = true;
+                            if (orderStatus && orderStatus !== 'PENDING') {
+                                statusEl.className = 'alert alert-secondary';
+                                statusEl.textContent = '订单状态：' + orderStatus + '，无法支付。';
+                                statusEl.classList.remove('d-none');
+                                stopPolling();
+                                hideQr();
+                            }
+                        }
+                    } else {
+                        statusEl.className = 'alert alert-warning';
+                        statusEl.textContent = '加载订单失败：' + ((api && (api.message || api.error)) || resp.status);
+                        statusEl.classList.remove('d-none');
+                    }
+                } catch (e) {
+                    statusEl.className = 'alert alert-danger';
+                    statusEl.textContent = '网络异常：' + e.message;
+                    statusEl.classList.remove('d-none');
+                }
+            }
+
+            function bindOptions() {
+                document.querySelectorAll('.pay-option').forEach(card => {
+                    card.addEventListener('click', () => {
+                        document.querySelectorAll('.pay-option').forEach(c => c.classList.remove('active'));
+                        card.classList.add('active');
+                        selected = { provider: card.dataset.provider, method: card.dataset.method };
+                        payBtn.disabled = false;
+                        // 选择支付方式时不显示二维码卡片，等待点击“立即支付”
+                        hideQr();
+                    });
+                });
+            }
+
+            function showQr() {
+                if (qrPane) qrPane.classList.add('show');
+                if (qrCodeEl && !currentPaymentNo) {
+                    qrCodeEl.innerHTML = '<div class="text-muted">点击“立即支付”生成二维码</div>';
+                }
+                if (confirmBtn) confirmBtn.disabled = !currentPaymentNo;
+            }
+            function hideQr() {
+                if (qrPane) qrPane.classList.remove('show');
+                if (qrCodeEl) qrCodeEl.innerHTML = '';
+                currentPaymentNo = null;
+                if (confirmBtn) confirmBtn.disabled = true;
+            }
+
+            function startPolling() {
+                stopPolling();
+                pollTimer = setInterval(async () => {
+                    try {
+                        const resp = await fetch(`/api/membership/order/${orderNo}`, { headers: { 'Accept': 'application/json' } });
+                        const api = await resp.json();
+                        const data = unwrap(api);
+                        if (resp.ok) {
+                            const st = (data.status || '').toUpperCase();
+                            if (st === 'PAID') {
+                                stopPolling();
+                                statusEl.className = 'alert alert-success';
+                                statusEl.textContent = '支付成功，正在跳转...';
+                                const qs = new URLSearchParams({
+                                    orderNo: String(data.orderNo || orderNo || ''),
+                                    userId: String(data.userId || ''),
+                                    type: String(data.type || ''),
+                                    periodQuota: String(data.periodQuota || ''),
+                                    startAt: String(data.startAt || ''),
+                                    endAt: String(data.endAt || ''),
+                                    amount: String(data.amount || ''),
+                                    paidAt: String(data.paidAt || '')
+                                });
+                                setTimeout(() => { window.location.assign(`/membership/success?${qs.toString()}`); }, 600);
+                            }
+                        }
+                    } catch (_) {}
+                }, 3000);
+            }
+
+            function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
+
+            async function doPay() {
+                if (!selected || !orderNo) return;
+                statusEl.className = 'alert alert-info';
+                statusEl.textContent = '正在发起支付...';
+                statusEl.classList.remove('d-none');
+                try {
+                    if ((expiresAtMs && Date.now() >= expiresAtMs) || (orderStatus && orderStatus !== 'PENDING')) {
+                        statusEl.className = 'alert alert-warning';
+                        statusEl.textContent = '订单已过期或不可支付。';
+                        statusEl.classList.remove('d-none');
+                        return;
+                    }
+                    // 扫码方式：调用预下单返回二维码链接
+                    if ((selected.method || '').endsWith('_QR')) {
+                        const resp = await fetch('/api/payment/prepay', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                            body: JSON.stringify({ orderNo, provider: selected.provider, method: selected.method })
+                        });
+                        const api = await resp.json();
+                        const data = unwrap(api);
+                        if (resp.ok) {
+                            currentPaymentNo = data.paymentNo || null;
+                            statusEl.className = 'alert alert-info';
+                            statusEl.textContent = '已生成二维码，请使用微信/支付宝扫码支付。';
+                            showQr();
+                            // 生成二维码
+                            if (qrCodeEl) {
+                                try {
+                                    qrCodeEl.innerHTML = '';
+                                    const codeText = String(data.codeUrl || '');
+                                    if (!codeText) throw new Error('二维码链接为空');
+                                    new QRCode(qrCodeEl, {
+                                        text: codeText,
+                                        width: 220,
+                                        height: 220,
+                                    });
+                                    if (confirmBtn) confirmBtn.disabled = false;
+                                } catch (e) {
+                                    statusEl.className = 'alert alert-warning';
+                                    statusEl.textContent = '二维码生成失败，请刷新或稍后再试（' + e.message + '）';
+                                }
+                            }
+                            startPolling();
+                        } else {
+                            const msg = (api && (api.message || api.error)) || '预下单失败';
+                            statusEl.className = 'alert alert-danger';
+                            statusEl.textContent = '预下单失败：' + msg;
+                        }
+                    } else {
+                        // 非扫码（例如银行卡）仍走直接支付
+                        const resp = await fetch('/api/payment/pay', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                            body: JSON.stringify({ orderNo, provider: selected.provider, method: selected.method })
+                        });
+                        const api = await resp.json();
+                        const data = unwrap(api);
+                        if (resp.ok) {
+                            statusEl.className = 'alert alert-success';
+                            statusEl.textContent = '支付成功，正在跳转...';
+                            const qs = new URLSearchParams({
+                                orderNo: String(data.orderNo || orderNo || ''),
+                                userId: String(data.userId || ''),
+                                type: String(data.type || ''),
+                                periodQuota: String(data.periodQuota || ''),
+                                startAt: String(data.startAt || ''),
+                                endAt: String(data.endAt || ''),
+                                amount: String(data.amount || ''),
+                                paidAt: String(data.paidAt || '')
+                            });
+                            setTimeout(() => { window.location.assign(`/membership/success?${qs.toString()}`); }, 600);
+                        } else {
+                            const msg = (api && (api.message || api.error)) || '支付失败';
+                            statusEl.className = 'alert alert-danger';
+                            statusEl.textContent = '支付失败：' + msg;
+                        }
+                    }
+                } catch (e) {
+                    statusEl.className = 'alert alert-danger';
+                    statusEl.textContent = '网络或系统异常：' + e.message;
+                }
+            }
+
+            document.addEventListener('DOMContentLoaded', () => {
+                loadOrder();
+                bindOptions();
+                payBtn.addEventListener('click', doPay);
+                if (confirmBtn) confirmBtn.addEventListener('click', async () => {
+                    if (!currentPaymentNo) {
+                        statusEl.className = 'alert alert-warning';
+                        statusEl.classList.remove('d-none');
+                        statusEl.textContent = '请先点击“立即支付”生成二维码后再确认支付。';
+                        return;
+                    }
+                    statusEl.className = 'alert alert-info';
+                    statusEl.textContent = '正在确认支付结果...';
+                    try {
+                        const resp = await fetch('/api/payment/confirm', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                            body: JSON.stringify({ paymentNo: currentPaymentNo })
+                        });
+                        const api = await resp.json();
+                        const data = unwrap(api);
+                        if (resp.ok) {
+                            statusEl.className = 'alert alert-success';
+                            statusEl.textContent = '支付成功，正在跳转...';
+                            const qs = new URLSearchParams({
+                                orderNo: String(data.orderNo || orderNo || ''),
+                                userId: String(data.userId || ''),
+                                type: String(data.type || ''),
+                                periodQuota: String(data.periodQuota || ''),
+                                startAt: String(data.startAt || ''),
+                                endAt: String(data.endAt || ''),
+                                amount: String(data.amount || ''),
+                                paidAt: String(data.paidAt || '')
+                            });
+                            setTimeout(() => { window.location.assign(`/membership/success?${qs.toString()}`); }, 600);
+                        } else {
+                            const msg = (api && (api.message || api.error)) || '确认失败';
+                            statusEl.className = 'alert alert-danger';
+                            statusEl.textContent = '确认失败：' + msg;
+                        }
+                    } catch (e) {
+                        statusEl.className = 'alert alert-danger';
+                        statusEl.textContent = '网络或系统异常：' + e.message;
+                    }
+                });
+                if (refreshBtn) refreshBtn.addEventListener('click', loadOrder);
+            });
+        })();
+    </script>
+</th:block>
+</body>
+</html>

@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout/base :: layout(~{::title}, ~{::content}, ~{::page-styles}, ~{::page-scripts})}">
+<head>
+    <title>系统设置 - 智能翻译助手</title>
+    
+    <!-- 页面特定样式 -->
+    <th:block th:fragment="page-styles">
+        <style>
+            .settings-container {
+                max-width: 800px;
+                margin: 0 auto;
+            }
+
+            .settings-card {
+                background: white;
+                border-radius: 0.75rem;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                overflow: hidden;
+                margin-bottom: 1.5rem;
+            }
+
+            .settings-header {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 1.5rem;
+            }
+
+            .settings-section {
+                padding: 1.5rem;
+                border-bottom: 1px solid #e2e8f0;
+            }
+
+            .settings-section:last-child {
+                border-bottom: none;
+            }
+
+            .settings-label {
+                font-weight: 500;
+                margin-bottom: 0.5rem;
+            }
+
+            .settings-description {
+                font-size: 0.875rem;
+                color: #64748b;
+                margin-bottom: 1rem;
+            }
+
+            .form-check-label {
+                font-weight: normal;
+            }
+
+            .api-key-input {
+                font-family: 'Courier New', monospace;
+            }
+
+            .test-connection-btn {
+                margin-top: 0.5rem;
+            }
+        </style>
+    </th:block>
+</head>
+
+<body>
+    <div th:fragment="content">
+        <div class="settings-container">
+            <!-- 页面标题 -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1 class="h3 mb-0">系统设置</h1>
+                <button class="btn btn-primary">
+                    <i class="fas fa-save me-1"></i>保存设置
+                </button>
+            </div>
+
+            <!-- 基本设置 -->
+            <div class="settings-card">
+                <div class="settings-header">
+                    <h2 class="h4 mb-0">基本设置</h2>
+                </div>
+                <div class="settings-section">
+                    <div class="settings-label">默认语言对</div>
+                    <div class="settings-description">设置默认的源语言和目标语言</div>
+                    <div class="row g-3">
+                        <div class="col-md-5">
+                            <label class="form-label">默认源语言</label>
+                            <select class="form-select">
+                                <option>自动检测</option>
+                                <option selected>英语</option>
+                                <option>中文</option>
+                                <option>日语</option>
+                                <option>韩语</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2 text-center align-self-end pb-2">
+                            <i class="fas fa-exchange-alt"></i>
+                        </div>
+                        <div class="col-md-5">
+                            <label class="form-label">默认目标语言</label>
+                            <select class="form-select">
+                                <option>英语</option>
+                                <option selected>中文</option>
+                                <option>日语</option>
+                                <option>韩语</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <div class="settings-label">默认翻译引擎</div>
+                    <div class="settings-description">设置默认使用的翻译引擎</div>
+                    <select class="form-select">
+                        <option>Google翻译</option>
+                        <option>百度翻译</option>
+                        <option selected>DeepL翻译</option>
+                        <option>腾讯翻译</option>
+                    </select>
+                </div>
+
+                <div class="settings-section">
+                    <div class="settings-label">界面语言</div>
+                    <div class="settings-description">设置系统界面显示语言</div>
+                    <select class="form-select">
+                        <option selected>中文</option>
+                        <option>English</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- 翻译设置 -->
+            <div class="settings-card">
+                <div class="settings-header">
+                    <h2 class="h4 mb-0">翻译设置</h2>
+                </div>
+                <div class="settings-section">
+                    <div class="settings-label">质量评估</div>
+                    <div class="settings-description">启用翻译质量自动评估功能</div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="qualityAssessment" checked>
+                        <label class="form-check-label" for="qualityAssessment">启用质量评估</label>
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <div class="settings-label">术语库匹配</div>
+                    <div class="settings-description">优先使用术语库中的专业术语</div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="terminologyMatch" checked>
+                        <label class="form-check-label" for="terminologyMatch">启用术语库匹配</label>
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <div class="settings-label">翻译缓存</div>
+                    <div class="settings-description">缓存翻译结果以提高性能</div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="translationCache" checked>
+                        <label class="form-check-label" for="translationCache">启用翻译缓存</label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- API密钥设置 -->
+            <div class="settings-card">
+                <div class="settings-header">
+                    <h2 class="h4 mb-0">API密钥设置</h2>
+                </div>
+                <div class="settings-section">
+                    <div class="settings-label">Google翻译API密钥</div>
+                    <div class="settings-description">用于Google翻译服务的API密钥</div>
+                    <input type="password" class="form-control api-key-input" placeholder="输入Google翻译API密钥">
+                    <button class="btn btn-outline-secondary btn-sm test-connection-btn">
+                        <i class="fas fa-plug me-1"></i>测试连接
+                    </button>
+                </div>
+
+                <div class="settings-section">
+                    <div class="settings-label">百度翻译API密钥</div>
+                    <div class="settings-description">用于百度翻译服务的API密钥</div>
+                    <input type="password" class="form-control api-key-input" placeholder="输入百度翻译API密钥">
+                    <button class="btn btn-outline-secondary btn-sm test-connection-btn">
+                        <i class="fas fa-plug me-1"></i>测试连接
+                    </button>
+                </div>
+
+                <div class="settings-section">
+                    <div class="settings-label">DeepL翻译API密钥</div>
+                    <div class="settings-description">用于DeepL翻译服务的API密钥</div>
+                    <input type="password" class="form-control api-key-input" placeholder="输入DeepL翻译API密钥">
+                    <button class="btn btn-outline-secondary btn-sm test-connection-btn">
+                        <i class="fas fa-plug me-1"></i>测试连接
+                    </button>
+                </div>
+            </div>
+
+            <!-- 高级设置 -->
+            <div class="settings-card">
+                <div class="settings-header">
+                    <h2 class="h4 mb-0">高级设置</h2>
+                </div>
+                <div class="settings-section">
+                    <div class="settings-label">并发翻译数</div>
+                    <div class="settings-description">同时进行的翻译任务数量</div>
+                    <select class="form-select">
+                        <option>1</option>
+                        <option>2</option>
+                        <option selected>3</option>
+                        <option>5</option>
+                        <option>10</option>
+                    </select>
+                </div>
+
+                <div class="settings-section">
+                    <div class="settings-label">超时设置</div>
+                    <div class="settings-description">翻译请求超时时间（秒）</div>
+                    <input type="number" class="form-control" value="30" min="5" max="300">
+                </div>
+
+                <div class="settings-section">
+                    <div class="settings-label">日志级别</div>
+                    <div class="settings-description">系统日志记录详细程度</div>
+                    <select class="form-select">
+                        <option>ERROR</option>
+                        <option>WARN</option>
+                        <option selected>INFO</option>
+                        <option>DEBUG</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 页面特定脚本 -->
+    <th:block th:fragment="page-scripts">
+        <script>
+            $(document).ready(function() {
+                // 保存设置
+                $('.btn-primary').on('click', function() {
+                    Utils.showToast('设置已保存', 'success');
+                });
+
+                // 测试连接
+                $('.test-connection-btn').on('click', function() {
+                    const btn = $(this);
+                    const originalText = btn.html();
+                    btn.html('<span class="spinner-border spinner-border-sm me-1"></span>测试中...');
+                    btn.prop('disabled', true);
+
+                    // 模拟测试连接
+                    setTimeout(function() {
+                        Utils.showToast('连接测试成功', 'success');
+                        btn.html(originalText);
+                        btn.prop('disabled', false);
+                    }, 2000);
+                });
+            });
+        </script>
+    </th:block>
+</body>
+</html>

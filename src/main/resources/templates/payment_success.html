@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout/base :: layout(~{::title}, ~{::content}, ~{::page-styles}, ~{::page-scripts})}">
+<head>
+    <title>支付成功</title>
+    <th:block th:fragment="page-styles">
+        <style>
+            .success-hero {
+                background: linear-gradient(135deg, #16a34a 0%, #22c55e 50%, #10b981 100%);
+                color: white;
+                border-radius: 12px;
+                padding: 24px;
+            }
+            .success-icon {
+                width: 64px; height: 64px; border-radius: 50%;
+                background: rgba(255,255,255,0.2);
+                display: flex; align-items: center; justify-content: center;
+            }
+        </style>
+    </th:block>
+</head>
+<body>
+<th:block th:fragment="content">
+    <div class="container py-4">
+        <div class="success-hero mb-4">
+            <div class="d-flex align-items-center">
+                <div class="success-icon me-3">
+                    <i class="fas fa-check fa-2x"></i>
+                </div>
+                <div>
+                    <h3 class="mb-1">支付成功</h3>
+                    <div id="descLine" class="opacity-75">会员开通已完成，权益立即生效。</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-lg-8">
+                <div class="card shadow-sm mb-3">
+                    <div class="card-header">
+                        <strong><i class="fas fa-receipt me-2"></i>订单信息</strong>
+                    </div>
+                    <div class="card-body">
+                        <div class="row mb-2">
+                            <div class="col-6">订单号：<span id="orderId">-</span></div>
+                            <div class="col-6">用户ID：<span id="userId">-</span></div>
+                        </div>
+                        <div class="row mb-2">
+                            <div class="col-6">会员类型：<span id="type">-</span></div>
+                            <div class="col-6">本期额度：<span id="quota">-</span> 点</div>
+                        </div>
+                        <div class="row mb-2">
+                            <div class="col-6">生效时间：<span id="startAt">-</span></div>
+                            <div class="col-6">到期时间：<span id="endAt">-</span></div>
+                        </div>
+                        <div class="row mb-2">
+                            <div class="col-6">支付金额：¥<span id="amount">-</span></div>
+                            <div class="col-6">支付时间：<span id="paidAt">-</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card shadow-sm">
+                    <div class="card-header">
+                        <strong><i class="fas fa-gift me-2"></i>会员权益</strong>
+                    </div>
+                    <div class="card-body">
+                        <ul class="mb-0">
+                            <li>每月 5000 点文档/文本翻译额度</li>
+                            <li>优先队列与更快的处理速度</li>
+                            <li>高级引擎（如 Qwen、DeepL 等）使用权限</li>
+                            <li>专属客服与问题优先处理</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-4">
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <div class="d-grid gap-2">
+                            <a class="btn btn-primary" href="/document" th:href="@{/document}">
+                                <i class="fas fa-file-alt me-2"></i>前往文档翻译
+                            </a>
+                            <a class="btn btn-outline-secondary" href="/membership" th:href="@{/membership}">
+                                <i class="fas fa-crown me-2"></i>返回会员中心
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</th:block>
+
+<th:block th:fragment="page-scripts">
+    <script>
+        (function(){
+            const params = new URLSearchParams(window.location.search);
+            const get = (k, d='-') => {
+                const v = params.get(k); return (v && v.trim()) ? v : d;
+            };
+            const fill = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+            const pad = (n) => String(n).padStart(2, '0');
+            const formatDate = (val) => {
+                try {
+                    if (!val) return '-';
+                    if (val instanceof Date) {
+                        const d = val;
+                        return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+                    }
+                    if (typeof val === 'string') {
+                        // 优先尝试解析为Date
+                        const d = new Date(val);
+                        if (!isNaN(d.getTime())) {
+                            return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+                        }
+                        // 回退：处理形如 2025-11-19T18:03:41.34569
+                        if (val.includes('T')) {
+                            return val.replace('T',' ').split('.')[0];
+                        }
+                        return val;
+                    }
+                    return String(val);
+                } catch (_) { return String(val || '-'); }
+            };
+
+            const orderIdParam = get('orderId','');
+            const orderNoParam = get('orderNo','');
+            fill('orderId', orderIdParam || orderNoParam || '-');
+            fill('userId', get('userId'));
+            const type = get('type');
+            const typeKey = (type || '').toUpperCase();
+            const typeMap = { MONTHLY: '包月会员', QUARTERLY: '包季会员', YEARLY: '包年会员' };
+            const typeName = typeMap[typeKey] || type || '-';
+            fill('type', typeName);
+            fill('quota', get('periodQuota'));
+            fill('startAt', formatDate(get('startAt','')));
+            fill('endAt', formatDate(get('endAt','')));
+            fill('amount', get('amount'));
+            const paidParam = get('paidAt','');
+            fill('paidAt', paidParam ? formatDate(paidParam) : formatDate(new Date()));
+
+            const descLine = document.getElementById('descLine');
+            if (descLine) {
+                descLine.textContent = `恭喜你开通 ${typeName}，现在即可使用会员权益。`;
+            }
+        })();
+    </script>
+</th:block>
+</body>
+</html>

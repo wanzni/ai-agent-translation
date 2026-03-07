@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title th:text="${pageTitle} + ' - 智能翻译助手'">批量翻译 - 智能翻译助手</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .batch-translate-container {
+            background: #f8f9fa;
+            min-height: calc(100vh - 120px);
+            padding: 20px 0;
+        }
+        
+        .batch-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        
+        .batch-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 12px 12px 0 0;
+        }
+        
+        .upload-area {
+            border: 2px dashed #dee2e6;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        
+        .upload-area:hover {
+            border-color: #667eea;
+            background: #f8f9ff;
+        }
+        
+        .upload-area.dragover {
+            border-color: #667eea;
+            background: #f0f4ff;
+        }
+        
+        .text-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .text-item {
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+            padding: 10px;
+            margin-bottom: 10px;
+            background: #f8f9fa;
+            position: relative;
+        }
+        
+        .text-item .remove-btn {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        
+        .progress-container {
+            display: none;
+            margin-top: 20px;
+        }
+        
+        .result-container {
+            display: none;
+            margin-top: 20px;
+        }
+        
+        .result-item {
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 15px;
+            background: white;
+        }
+        
+        .result-item .source-text {
+            color: #6c757d;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+        
+        .result-item .translated-text {
+            color: #212529;
+            font-weight: 500;
+        }
+        
+        .stats-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .stats-number {
+            font-size: 2rem;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .export-options {
+            display: none;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div th:replace="~{layout/base :: layout(~{::main})}">
+        <main>
+            <div class="batch-translate-container">
+                <div class="container-fluid">
+                    <!-- 面包屑导航 -->
+                    <nav aria-label="breadcrumb" class="mb-4">
+                        <ol class="breadcrumb">
+                            <li class="breadcrumb-item"><a href="/" class="text-decoration-none">首页</a></li>
+                            <li class="breadcrumb-item"><a href="/translate" class="text-decoration-none">文本翻译</a></li>
+                            <li class="breadcrumb-item active" aria-current="page">批量翻译</li>
+                        </ol>
+                    </nav>
+
+                    <div class="row">
+                        <!-- 左侧主要内容 -->
+                        <div class="col-lg-8">
+                            <!-- 批量翻译卡片 -->
+                            <div class="batch-card">
+                                <div class="batch-header">
+                                    <h4 class="mb-0">
+                                        <i class="fas fa-layer-group me-2"></i>
+                                        批量翻译
+                                    </h4>
+                                    <p class="mb-0 mt-2 opacity-75">一次性翻译多个文本，提高工作效率</p>
+                                </div>
+                                
+                                <div class="card-body p-4">
+                                    <!-- 翻译设置 -->
+                                    <div class="row mb-4">
+                                        <div class="col-md-4">
+                                            <label class="form-label">源语言</label>
+                                            <select class="form-select" id="sourceLanguage">
+                                                <option value="auto">自动检测</option>
+                                                <option value="en">英语</option>
+                                                <option value="zh">中文</option>
+                                                <option value="ja">日语</option>
+                                                <option value="ko">韩语</option>
+                                                <option value="fr">法语</option>
+                                                <option value="de">德语</option>
+                                                <option value="es">西班牙语</option>
+                                                <option value="ru">俄语</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label">目标语言</label>
+                                            <select class="form-select" id="targetLanguage">
+                                                <option value="zh">中文</option>
+                                                <option value="en">英语</option>
+                                                <option value="ja">日语</option>
+                                                <option value="ko">韩语</option>
+                                                <option value="fr">法语</option>
+                                                <option value="de">德语</option>
+                                                <option value="es">西班牙语</option>
+                                                <option value="ru">俄语</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label">翻译引擎</label>
+                                            <select class="form-select" id="translationEngine">
+                                                <option value="google">Google 翻译</option>
+                                                <option value="baidu">百度翻译</option>
+                                                <option value="tencent">腾讯翻译</option>
+                                                <option value="microsoft">微软翻译</option>
+                                                <option value="deepl">DeepL</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <!-- 文本输入区域 -->
+                                    <div class="mb-4">
+                                        <label class="form-label">添加待翻译文本</label>
+                                        
+                                        <!-- 文件上传区域 -->
+                                        <div class="upload-area mb-3" id="uploadArea">
+                                            <i class="fas fa-cloud-upload-alt fa-3x text-muted mb-3"></i>
+                                            <h5>拖拽文件到此处或点击上传</h5>
+                                            <p class="text-muted">支持 .txt, .csv, .xlsx 格式文件</p>
+                                            <input type="file" id="fileInput" class="d-none" accept=".txt,.csv,.xlsx">
+                                        </div>
+
+                                        <!-- 手动输入 -->
+                                        <div class="row">
+                                            <div class="col-md-8">
+                                                <textarea class="form-control" id="textInput" rows="3" 
+                                                         placeholder="输入要翻译的文本，每行一个"></textarea>
+                                            </div>
+                                            <div class="col-md-4">
+                                                <button type="button" class="btn btn-outline-primary w-100 mb-2" id="addTextBtn">
+                                                    <i class="fas fa-plus me-2"></i>添加文本
+                                                </button>
+                                                <button type="button" class="btn btn-outline-secondary w-100" id="clearAllBtn">
+                                                    <i class="fas fa-trash me-2"></i>清空所有
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- 文本列表 -->
+                                    <div class="mb-4">
+                                        <div class="d-flex justify-content-between align-items-center mb-3">
+                                            <h6 class="mb-0">待翻译文本列表 (<span id="textCount">0</span>)</h6>
+                                            <div>
+                                                <button type="button" class="btn btn-primary" id="translateBtn" disabled>
+                                                    <i class="fas fa-language me-2"></i>开始翻译
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div class="text-list" id="textList">
+                                            <div class="text-center text-muted py-4">
+                                                <i class="fas fa-inbox fa-2x mb-3"></i>
+                                                <p>暂无待翻译文本，请添加文本或上传文件</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- 翻译进度 -->
+                                    <div class="progress-container" id="progressContainer">
+                                        <h6>翻译进度</h6>
+                                        <div class="progress mb-2">
+                                            <div class="progress-bar" id="progressBar" role="progressbar" style="width: 0%"></div>
+                                        </div>
+                                        <div class="d-flex justify-content-between">
+                                            <small class="text-muted">已完成: <span id="completedCount">0</span></small>
+                                            <small class="text-muted">总计: <span id="totalCount">0</span></small>
+                                        </div>
+                                    </div>
+
+                                    <!-- 翻译结果 -->
+                                    <div class="result-container" id="resultContainer">
+                                        <div class="d-flex justify-content-between align-items-center mb-3">
+                                            <h6 class="mb-0">翻译结果</h6>
+                                            <div>
+                                                <button type="button" class="btn btn-outline-success btn-sm me-2" id="exportBtn">
+                                                    <i class="fas fa-download me-1"></i>导出结果
+                                                </button>
+                                                <button type="button" class="btn btn-outline-primary btn-sm" id="copyAllBtn">
+                                                    <i class="fas fa-copy me-1"></i>复制全部
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div class="text-list" id="resultList">
+                                            <!-- 翻译结果将在这里显示 -->
+                                        </div>
+                                    </div>
+
+                                    <!-- 导出选项 -->
+                                    <div class="export-options" id="exportOptions">
+                                        <h6>导出选项</h6>
+                                        <div class="row">
+                                            <div class="col-md-6">
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="radio" name="exportFormat" id="exportTxt" value="txt" checked>
+                                                    <label class="form-check-label" for="exportTxt">
+                                                        <i class="fas fa-file-alt me-2"></i>文本文件 (.txt)
+                                                    </label>
+                                                </div>
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="radio" name="exportFormat" id="exportCsv" value="csv">
+                                                    <label class="form-check-label" for="exportCsv">
+                                                        <i class="fas fa-file-csv me-2"></i>CSV文件 (.csv)
+                                                    </label>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="radio" name="exportFormat" id="exportExcel" value="xlsx">
+                                                    <label class="form-check-label" for="exportExcel">
+                                                        <i class="fas fa-file-excel me-2"></i>Excel文件 (.xlsx)
+                                                    </label>
+                                                </div>
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="radio" name="exportFormat" id="exportJson" value="json">
+                                                    <label class="form-check-label" for="exportJson">
+                                                        <i class="fas fa-file-code me-2"></i>JSON文件 (.json)
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="mt-3">
+                                            <button type="button" class="btn btn-success me-2" id="confirmExportBtn">
+                                                <i class="fas fa-download me-2"></i>确认导出
+                                            </button>
+                                            <button type="button" class="btn btn-secondary" id="cancelExportBtn">
+                                                取消
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 右侧统计信息 -->
+                        <div class="col-lg-4">
+                            <!-- 统计卡片 -->
+                            <div class="row mb-4">
+                                <div class="col-6">
+                                    <div class="stats-card">
+                                        <div class="stats-number" id="statsTotal">0</div>
+                                        <div>总文本数</div>
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="stats-card">
+                                        <div class="stats-number" id="statsCompleted">0</div>
+                                        <div>已完成</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 使用提示 -->
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">
+                                        <i class="fas fa-lightbulb me-2"></i>使用提示
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <ul class="list-unstyled mb-0">
+                                        <li class="mb-2">
+                                            <i class="fas fa-check text-success me-2"></i>
+                                            支持拖拽上传文本文件
+                                        </li>
+                                        <li class="mb-2">
+                                            <i class="fas fa-check text-success me-2"></i>
+                                            每行一个文本进行批量翻译
+                                        </li>
+                                        <li class="mb-2">
+                                            <i class="fas fa-check text-success me-2"></i>
+                                            支持多种格式导出结果
+                                        </li>
+                                        <li class="mb-2">
+                                            <i class="fas fa-check text-success me-2"></i>
+                                            实时显示翻译进度
+                                        </li>
+                                        <li class="mb-0">
+                                            <i class="fas fa-check text-success me-2"></i>
+                                            自动保存翻译历史
+                                        </li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            <!-- 快捷操作 -->
+                            <div class="card mt-4">
+                                <div class="card-header">
+                                    <h6 class="mb-0">
+                                        <i class="fas fa-bolt me-2"></i>快捷操作
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="d-grid gap-2">
+                                        <button type="button" class="btn btn-outline-primary btn-sm" id="loadTemplateBtn">
+                                            <i class="fas fa-file-import me-2"></i>加载模板
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" id="saveTemplateBtn">
+                                            <i class="fas fa-save me-2"></i>保存为模板
+                                        </button>
+                                        <button type="button" class="btn btn-outline-info btn-sm" id="viewHistoryBtn">
+                                            <i class="fas fa-history me-2"></i>查看历史
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // 页面数据
+        let textList = [];
+        let translationResults = [];
+        let isTranslating = false;
+
+        // DOM 元素
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const textInput = document.getElementById('textInput');
+        const addTextBtn = document.getElementById('addTextBtn');
+        const clearAllBtn = document.getElementById('clearAllBtn');
+        const translateBtn = document.getElementById('translateBtn');
+        const textListContainer = document.getElementById('textList');
+        const textCountSpan = document.getElementById('textCount');
+        const progressContainer = document.getElementById('progressContainer');
+        const progressBar = document.getElementById('progressBar');
+        const completedCountSpan = document.getElementById('completedCount');
+        const totalCountSpan = document.getElementById('totalCount');
+        const resultContainer = document.getElementById('resultContainer');
+        const resultList = document.getElementById('resultList');
+        const exportBtn = document.getElementById('exportBtn');
+        const copyAllBtn = document.getElementById('copyAllBtn');
+        const exportOptions = document.getElementById('exportOptions');
+        const confirmExportBtn = document.getElementById('confirmExportBtn');
+        const cancelExportBtn = document.getElementById('cancelExportBtn');
+
+        // 统计元素
+        const statsTotal = document.getElementById('statsTotal');
+        const statsCompleted = document.getElementById('statsCompleted');
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeEventListeners();
+            updateUI();
+        });
+
+        // 初始化事件监听器
+        function initializeEventListeners() {
+            // 文件上传
+            uploadArea.addEventListener('click', () => fileInput.click());
+            uploadArea.addEventListener('dragover', handleDragOver);
+            uploadArea.addEventListener('drop', handleDrop);
+            fileInput.addEventListener('change', handleFileSelect);
+
+            // 文本操作
+            addTextBtn.addEventListener('click', addText);
+            clearAllBtn.addEventListener('click', clearAllTexts);
+            translateBtn.addEventListener('click', startTranslation);
+
+            // 导出操作
+            exportBtn.addEventListener('click', showExportOptions);
+            confirmExportBtn.addEventListener('click', exportResults);
+            cancelExportBtn.addEventListener('click', hideExportOptions);
+            copyAllBtn.addEventListener('click', copyAllResults);
+
+            // 快捷操作
+            document.getElementById('loadTemplateBtn').addEventListener('click', loadTemplate);
+            document.getElementById('saveTemplateBtn').addEventListener('click', saveTemplate);
+            document.getElementById('viewHistoryBtn').addEventListener('click', viewHistory);
+
+            // 回车键添加文本
+            textInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    addText();
+                }
+            });
+        }
+
+        // 处理拖拽
+        function handleDragOver(e) {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFile(files[0]);
+            }
+        }
+
+        // 处理文件选择
+        function handleFileSelect(e) {
+            const file = e.target.files[0];
+            if (file) {
+                handleFile(file);
+            }
+        }
+
+        // 处理文件
+        function handleFile(file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const content = e.target.result;
+                const lines = content.split('\n').filter(line => line.trim());
+                
+                lines.forEach(line => {
+                    if (line.trim()) {
+                        textList.push({
+                            id: Date.now() + Math.random(),
+                            text: line.trim(),
+                            status: 'pending'
+                        });
+                    }
+                });
+                
+                updateUI();
+                showToast('文件上传成功', `已添加 ${lines.length} 条文本`, 'success');
+            };
+            reader.readAsText(file);
+        }
+
+        // 添加文本
+        function addText() {
+            const text = textInput.value.trim();
+            if (!text) return;
+
+            const lines = text.split('\n').filter(line => line.trim());
+            lines.forEach(line => {
+                textList.push({
+                    id: Date.now() + Math.random(),
+                    text: line.trim(),
+                    status: 'pending'
+                });
+            });
+
+            textInput.value = '';
+            updateUI();
+            showToast('添加成功', `已添加 ${lines.length} 条文本`, 'success');
+        }
+
+        // 删除文本
+        function removeText(id) {
+            textList = textList.filter(item => item.id !== id);
+            updateUI();
+        }
+
+        // 清空所有文本
+        function clearAllTexts() {
+            if (textList.length === 0) return;
+            
+            if (confirm('确定要清空所有文本吗？')) {
+                textList = [];
+                translationResults = [];
+                updateUI();
+                hideProgress();
+                hideResults();
+                showToast('清空成功', '已清空所有文本', 'info');
+            }
+        }
+
+        // 开始翻译
+        async function startTranslation() {
+            if (textList.length === 0 || isTranslating) return;
+
+            isTranslating = true;
+            translationResults = [];
+            
+            const sourceLanguage = document.getElementById('sourceLanguage').value;
+            const targetLanguage = document.getElementById('targetLanguage').value;
+            const engine = document.getElementById('translationEngine').value;
+
+            showProgress();
+            updateProgress(0, textList.length);
+            
+            translateBtn.disabled = true;
+            translateBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>翻译中...';
+
+            try {
+                for (let i = 0; i < textList.length; i++) {
+                    const item = textList[i];
+                    
+                    // 模拟翻译API调用
+                    const result = await translateText(item.text, sourceLanguage, targetLanguage, engine);
+                    
+                    translationResults.push({
+                        id: item.id,
+                        sourceText: item.text,
+                        translatedText: result.translatedText,
+                        sourceLanguage: result.sourceLanguage,
+                        targetLanguage: result.targetLanguage,
+                        engine: result.engine,
+                        confidence: result.confidence
+                    });
+
+                    updateProgress(i + 1, textList.length);
+                    updateResultsDisplay();
+                    
+                    // 模拟延迟
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
+
+                showResults();
+                showToast('翻译完成', `成功翻译 ${textList.length} 条文本`, 'success');
+                
+            } catch (error) {
+                console.error('翻译失败:', error);
+                showToast('翻译失败', error.message, 'error');
+            } finally {
+                isTranslating = false;
+                translateBtn.disabled = false;
+                translateBtn.innerHTML = '<i class="fas fa-language me-2"></i>开始翻译';
+            }
+        }
+
+        // 模拟翻译API
+        async function translateText(text, sourceLanguage, targetLanguage, engine) {
+            // 模拟翻译结果
+            const mockTranslations = {
+                'Hello': '你好',
+                'Good morning': '早上好',
+                'Thank you': '谢谢',
+                'How are you?': '你好吗？',
+                'See you later': '再见'
+            };
+
+            return {
+                translatedText: mockTranslations[text] || `[${engine}翻译] ${text}`,
+                sourceLanguage: sourceLanguage === 'auto' ? 'en' : sourceLanguage,
+                targetLanguage: targetLanguage,
+                engine: engine,
+                confidence: Math.random() * 0.3 + 0.7 // 0.7-1.0
+            };
+        }
+
+        // 更新UI
+        function updateUI() {
+            updateTextList();
+            updateStats();
+            translateBtn.disabled = textList.length === 0 || isTranslating;
+        }
+
+        // 更新文本列表显示
+        function updateTextList() {
+            textCountSpan.textContent = textList.length;
+            
+            if (textList.length === 0) {
+                textListContainer.innerHTML = `
+                    <div class="text-center text-muted py-4">
+                        <i class="fas fa-inbox fa-2x mb-3"></i>
+                        <p>暂无待翻译文本，请添加文本或上传文件</p>
+                    </div>
+                `;
+                return;
+            }
+
+            textListContainer.innerHTML = textList.map(item => `
+                <div class="text-item">
+                    <button type="button" class="remove-btn" onclick="removeText('${item.id}')">
+                        <i class="fas fa-times"></i>
+                    </button>
+                    <div class="text-content">${escapeHtml(item.text)}</div>
+                </div>
+            `).join('');
+        }
+
+        // 更新统计信息
+        function updateStats() {
+            statsTotal.textContent = textList.length;
+            statsCompleted.textContent = translationResults.length;
+        }
+
+        // 显示进度
+        function showProgress() {
+            progressContainer.style.display = 'block';
+        }
+
+        // 隐藏进度
+        function hideProgress() {
+            progressContainer.style.display = 'none';
+        }
+
+        // 更新进度
+        function updateProgress(completed, total) {
+            const percentage = total > 0 ? (completed / total) * 100 : 0;
+            progressBar.style.width = percentage + '%';
+            progressBar.textContent = Math.round(percentage) + '%';
+            completedCountSpan.textContent = completed;
+            totalCountSpan.textContent = total;
+            updateStats();
+        }
+
+        // 显示结果
+        function showResults() {
+            resultContainer.style.display = 'block';
+        }
+
+        // 隐藏结果
+        function hideResults() {
+            resultContainer.style.display = 'none';
+        }
+
+        // 更新结果显示
+        function updateResultsDisplay() {
+            if (translationResults.length === 0) return;
+
+            resultList.innerHTML = translationResults.map(result => `
+                <div class="result-item">
+                    <div class="source-text">
+                        <i class="fas fa-arrow-right me-2"></i>
+                        ${escapeHtml(result.sourceText)}
+                    </div>
+                    <div class="translated-text">
+                        ${escapeHtml(result.translatedText)}
+                    </div>
+                    <div class="mt-2">
+                        <small class="text-muted">
+                            <i class="fas fa-robot me-1"></i>${result.engine}
+                            <i class="fas fa-chart-line ms-3 me-1"></i>置信度: ${(result.confidence * 100).toFixed(1)}%
+                        </small>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // 显示导出选项
+        function showExportOptions() {
+            exportOptions.style.display = 'block';
+        }
+
+        // 隐藏导出选项
+        function hideExportOptions() {
+            exportOptions.style.display = 'none';
+        }
+
+        // 导出结果
+        function exportResults() {
+            const format = document.querySelector('input[name="exportFormat"]:checked').value;
+            
+            let content = '';
+            let filename = `batch_translation_${new Date().toISOString().slice(0, 10)}`;
+            let mimeType = 'text/plain';
+
+            switch (format) {
+                case 'txt':
+                    content = translationResults.map(r => `${r.sourceText}\n${r.translatedText}\n---`).join('\n');
+                    filename += '.txt';
+                    break;
+                case 'csv':
+                    content = 'Source Text,Translated Text,Source Language,Target Language,Engine,Confidence\n';
+                    content += translationResults.map(r => 
+                        `"${r.sourceText}","${r.translatedText}","${r.sourceLanguage}","${r.targetLanguage}","${r.engine}","${(r.confidence * 100).toFixed(1)}%"`
+                    ).join('\n');
+                    filename += '.csv';
+                    mimeType = 'text/csv';
+                    break;
+                case 'json':
+                    content = JSON.stringify(translationResults, null, 2);
+                    filename += '.json';
+                    mimeType = 'application/json';
+                    break;
+            }
+
+            downloadFile(content, filename, mimeType);
+            hideExportOptions();
+            showToast('导出成功', `已导出为 ${format.toUpperCase()} 格式`, 'success');
+        }
+
+        // 复制所有结果
+        function copyAllResults() {
+            const content = translationResults.map(r => `${r.sourceText}\n${r.translatedText}`).join('\n\n');
+            navigator.clipboard.writeText(content).then(() => {
+                showToast('复制成功', '已复制所有翻译结果', 'success');
+            });
+        }
+
+        // 下载文件
+        function downloadFile(content, filename, mimeType) {
+            const blob = new Blob([content], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // 快捷操作
+        function loadTemplate() {
+            showToast('功能开发中', '模板加载功能正在开发中', 'info');
+        }
+
+        function saveTemplate() {
+            if (textList.length === 0) {
+                showToast('无法保存', '请先添加文本内容', 'warning');
+                return;
+            }
+            showToast('功能开发中', '模板保存功能正在开发中', 'info');
+        }
+
+        function viewHistory() {
+            window.location.href = '/history';
+        }
+
+        // 工具函数
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function showToast(title, message, type = 'info') {
+            // 使用基础模板中的 showToast 函数
+            if (typeof window.showToast === 'function') {
+                window.showToast(title, message, type);
+            } else {
+                alert(`${title}: ${message}`);
+            }
+        }
+    </script>
+</body>
+</html>

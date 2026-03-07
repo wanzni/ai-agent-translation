@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout/base :: layout(~{::title}, ~{::content}, ~{::page-styles}, ~{::page-scripts})}">
+<head>
+    <title>朋友圈 - 智能翻译助手</title>
+
+    <th:block th:fragment="page-styles">
+        <style>
+            .moments-container { max-width: 900px; margin: 0 auto; }
+            .moment-card { background: white; border-radius: 0.75rem; box-shadow: 0 4px 6px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; margin-bottom: 1rem; }
+            .moment-header { display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1rem; border-bottom: 1px solid #e2e8f0; }
+            .moment-content { padding: 1rem; }
+            .moment-image { max-width: 100%; border-radius: 0.5rem; margin-top: 0.5rem; }
+            .composer-card { background: white; border-radius: 0.75rem; box-shadow: 0 4px 6px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; margin-bottom: 1.5rem; }
+            .btn-primary { background: var(--primary-color); border-color: var(--primary-color); }
+            .empty { text-align: center; color: #64748b; padding: 2rem 1rem; }
+        </style>
+    </th:block>
+</head>
+<body>
+<th:block th:fragment="content">
+    <div class="container my-4 moments-container">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h2 class="h4 mb-0"><i class="fas fa-users me-2"></i>朋友圈</h2>
+            <div class="small text-muted" th:if="${breadcrumbs != null}">
+                <span th:each="bc : ${breadcrumbs}" th:text="${bc.name}" class="me-2">首页</span>
+            </div>
+        </div>
+
+        <!-- 发帖框 -->
+        <div class="composer-card">
+            <div class="p-3">
+                <div class="mb-2">
+                    <textarea id="momentContent" class="form-control" rows="3" placeholder="说点什么吧..."></textarea>
+                </div>
+                <div class="d-flex align-items-center">
+                    <input id="momentImage" type="file" accept="image/*" class="form-control form-control-sm" />
+                    <button id="postMomentBtn" class="btn btn-primary btn-sm ms-2">
+                        <i class="fas fa-paper-plane me-1"></i>发布
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 列表 -->
+        <div id="momentsList"></div>
+        <div id="emptyTip" class="empty d-none">还没有动态，来发布第一条吧！</div>
+    </div>
+    
+    <!-- Toast 占位（复用基础模板脚本） -->
+    <div id="toastContainer" class="position-fixed bottom-0 end-0 p-3" style="z-index: 1080"></div>
+    
+    <script>
+        async function loadMoments() {
+            try {
+                const res = await fetch('/api/moments/list?page=0&size=20');
+                const data = await res.json();
+                const items = data.items || [];
+                const list = document.getElementById('momentsList');
+                const empty = document.getElementById('emptyTip');
+                list.innerHTML = '';
+                if (items.length === 0) { empty.classList.remove('d-none'); return; }
+                empty.classList.add('d-none');
+                for (const it of items) {
+                    const card = document.createElement('div');
+                    card.className = 'moment-card';
+                    card.innerHTML = `
+                        <div class="moment-header">
+                            <div class="d-flex align-items-center">
+                                <div class="fw-bold">${it.userId || '匿名用户'}</div>
+                            </div>
+                            <div class="text-muted small">${new Date(it.createdAt).toLocaleString()}</div>
+                        </div>
+                        <div class="moment-content">
+                            <div>${escapeHtml(it.content || '')}</div>
+                            ${it.imageUrl ? `<img class="moment-image" src="${it.imageUrl}" alt="moment image" />` : ''}
+                        </div>
+                    `;
+                    list.appendChild(card);
+                }
+            } catch (e) {
+                showToast('加载失败', '朋友圈加载失败', 'error');
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        async function postMoment() {
+            const btn = document.getElementById('postMomentBtn');
+            const content = document.getElementById('momentContent').value.trim();
+            const image = document.getElementById('momentImage').files[0];
+            if (!content) { showToast('内容不能为空', '请填写内容', 'warning'); return; }
+            btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>发布中...';
+            try {
+                const fd = new FormData();
+                fd.append('content', content);
+                if (image) fd.append('image', image);
+                const res = await fetch('/api/moments/create', { method: 'POST', body: fd });
+                const data = await res.json();
+                showToast('发布成功', '动态已发布', 'success');
+                document.getElementById('momentContent').value = '';
+                document.getElementById('momentImage').value = '';
+                // 重新加载列表
+                await loadMoments();
+            } catch (e) {
+                showToast('发布失败', '请稍后重试', 'error');
+            } finally {
+                btn.disabled = false; btn.innerHTML = '<i class="fas fa-paper-plane me-1"></i>发布';
+            }
+        }
+
+        function showToast(title, message, type = 'info') {
+            if (typeof window.showToast === 'function') {
+                window.showToast(title, message, type);
+            } else {
+                alert(`${title}: ${message}`);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadMoments();
+            document.getElementById('postMomentBtn').addEventListener('click', postMoment);
+        });
+    </script>
+    
+    <th:block th:fragment="page-scripts"></th:block>
+</th:block>
+</body>
+</html>

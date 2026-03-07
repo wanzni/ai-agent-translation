@@ -1,0 +1,1072 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout/base :: layout(~{::title}, ~{::content}, ~{::page-styles}, ~{::page-scripts})}">
+<head>
+    <title>文本翻译 - 智能翻译助手</title>
+    
+    <!-- 页面特定样式 -->
+    <th:block th:fragment="page-styles">
+        <style>
+            .translation-container {
+                max-width: 1200px;
+                margin: 0 auto;
+            }
+
+            .translation-panel {
+                background: white;
+                border-radius: 0.75rem;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                overflow: hidden;
+            }
+
+            .language-selector {
+                background: #f8fafc;
+                border-bottom: 1px solid #e2e8f0;
+                padding: 1rem;
+            }
+
+            .language-select {
+                min-width: 150px;
+            }
+
+            .swap-languages {
+                background: var(--primary-color);
+                color: white;
+                border: none;
+                border-radius: 50%;
+                width: 40px;
+                height: 40px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                transition: all 0.3s ease;
+            }
+
+            .swap-languages:hover {
+                background: #1d4ed8;
+                transform: rotate(180deg);
+            }
+
+            .text-area {
+                border: none;
+                resize: none;
+                font-size: 1rem;
+                line-height: 1.6;
+                padding: 1.5rem;
+                min-height: 200px;
+            }
+
+            .text-area:focus {
+                outline: none;
+                box-shadow: none;
+            }
+
+            .source-area {
+                border-right: 1px solid #e2e8f0;
+            }
+
+            .target-area {
+                background: #f8fafc;
+            }
+
+            .char-count {
+                position: absolute;
+                bottom: 10px;
+                right: 15px;
+                font-size: 0.875rem;
+                color: #64748b;
+            }
+
+            .translation-actions {
+                background: #f8fafc;
+                border-top: 1px solid #e2e8f0;
+                padding: 1rem;
+            }
+
+            .engine-selector {
+                min-width: 120px;
+            }
+
+            .quality-score {
+                background: linear-gradient(45deg, #10b981, #059669);
+                color: white;
+                border-radius: 0.5rem;
+                padding: 0.5rem 1rem;
+                font-weight: 600;
+            }
+
+            .translation-options {
+                background: white;
+                border-radius: 0.75rem;
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+                padding: 1.5rem;
+                margin-bottom: 1.5rem;
+            }
+
+            .option-toggle {
+                cursor: pointer;
+                transition: all 0.3s ease;
+            }
+
+            .option-toggle:hover {
+                background: #f1f5f9;
+            }
+
+            .recent-translations {
+                max-height: 400px;
+                overflow-y: auto;
+            }
+
+            .recent-item {
+                cursor: pointer;
+                transition: all 0.3s ease;
+                border-left: 3px solid transparent;
+            }
+
+            .recent-item:hover {
+                background: #f8fafc;
+                border-left-color: var(--primary-color);
+            }
+
+            .loading-overlay {
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(255, 255, 255, 0.9);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 10;
+            }
+
+            .translation-result {
+                animation: fadeInUp 0.5s ease;
+            }
+
+            @keyframes fadeInUp {
+                from {
+                    opacity: 0;
+                    transform: translateY(20px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+            }
+
+            .alternative-translations {
+                background: #f8fafc;
+                border-radius: 0.5rem;
+                padding: 1rem;
+                margin-top: 1rem;
+            }
+
+            .alternative-item {
+                cursor: pointer;
+                padding: 0.5rem;
+                border-radius: 0.375rem;
+                transition: background-color 0.3s ease;
+            }
+
+            .alternative-item:hover {
+                background: white;
+            }
+
+            .confidence-bar {
+                height: 4px;
+                background: #e2e8f0;
+                border-radius: 2px;
+                overflow: hidden;
+            }
+
+            .confidence-fill {
+                height: 100%;
+                background: linear-gradient(90deg, #ef4444, #f59e0b, #10b981);
+                transition: width 0.5s ease;
+            }
+        </style>
+    </th:block>
+</head>
+
+<body>
+    <div th:fragment="content">
+        <div class="translation-container">
+            <!-- 翻译选项 -->
+            <div class="translation-options">
+                <div class="row align-items-center">
+                    <div class="col-md-6">
+                        <h5 class="mb-3">翻译设置</h5>
+                        <div class="row g-3">
+                            <div class="col-sm-6">
+                                <label class="form-label">翻译引擎</label>
+                                <select class="form-select engine-selector" id="translationEngine">
+                                    <option value="google">Google 翻译</option>
+                                    <option value="baidu">百度翻译</option>
+                                    <option value="tencent">腾讯翻译</option>
+                                    <option value="microsoft">微软翻译</option>
+                                    <option value="deepl">DeepL</option>
+                                </select>
+                            </div>
+                            <div class="col-sm-6">
+                                <label class="form-label">翻译类型</label>
+                                <select class="form-select" id="translationType">
+                                    <option value="general">通用翻译</option>
+                                    <option value="business">商务翻译</option>
+                                    <option value="technical">技术翻译</option>
+                                    <option value="medical">医学翻译</option>
+                                    <option value="legal">法律翻译</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <h5 class="mb-3">高级选项</h5>
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" id="useTerminology" checked>
+                            <label class="form-check-label" for="useTerminology">
+                                使用术语库
+                            </label>
+                        </div>
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" id="qualityAssessment" checked>
+                            <label class="form-check-label" for="qualityAssessment">
+                                质量评估
+                            </label>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="showAlternatives">
+                            <label class="form-check-label" for="showAlternatives">
+                                显示替代翻译
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 主翻译面板 -->
+            <div class="translation-panel">
+                <!-- 语言选择器 -->
+                <div class="language-selector">
+                    <div class="row align-items-center">
+                        <div class="col-5">
+                            <select class="form-select language-select" id="sourceLanguage">
+                                <option value="auto">自动检测</option>
+                                <option value="zh">中文</option>
+                                <option value="en" selected>英语</option>
+                                <option value="ja">日语</option>
+                                <option value="ko">韩语</option>
+                                <option value="fr">法语</option>
+                                <option value="de">德语</option>
+                                <option value="es">西班牙语</option>
+                                <option value="ru">俄语</option>
+                                <option value="ar">阿拉伯语</option>
+                            </select>
+                        </div>
+                        <div class="col-2 text-center">
+                            <button class="swap-languages" id="swapLanguages" title="交换语言">
+                                <i class="fas fa-exchange-alt"></i>
+                            </button>
+                        </div>
+                        <div class="col-5">
+                            <select class="form-select language-select" id="targetLanguage">
+                                <option value="zh" selected>中文</option>
+                                <option value="en">英语</option>
+                                <option value="ja">日语</option>
+                                <option value="ko">韩语</option>
+                                <option value="fr">法语</option>
+                                <option value="de">德语</option>
+                                <option value="es">西班牙语</option>
+                                <option value="ru">俄语</option>
+                                <option value="ar">阿拉伯语</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 翻译区域 -->
+                <div class="row g-0">
+                    <div class="col-md-6 position-relative">
+                        <textarea class="form-control text-area source-area" 
+                                  id="sourceText" 
+                                  placeholder="请输入要翻译的文本..."
+                                  maxlength="5000"></textarea>
+                        <!-- 源文本复制/粘贴按钮 -->
+                        <div class="position-absolute top-0 end-0 p-2 d-flex gap-2">
+                            <button class="btn btn-sm btn-outline-secondary" id="copySourceBtn" title="复制源文本">
+                                <i class="fas fa-copy"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-secondary" id="pasteSourceBtn" title="粘贴到源文本">
+                                <i class="fas fa-paste"></i>
+                            </button>
+                        </div>
+                        <div class="char-count">
+                            <span id="charCount">0</span> / 5000
+                        </div>
+                    </div>
+                    <div class="col-md-6 position-relative">
+                        <textarea class="form-control text-area target-area" 
+                                  id="targetText" 
+                                  placeholder="翻译结果将显示在这里..."
+                                  readonly></textarea>
+                        <!-- 译文复制按钮 -->
+                        <div class="position-absolute top-0 end-0 p-2">
+                            <button class="btn btn-sm btn-outline-secondary" id="copyTargetBtn" title="复制译文">
+                                <i class="fas fa-copy"></i>
+                            </button>
+                        </div>
+                        <div class="loading-overlay d-none" id="loadingOverlay">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">翻译中...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 翻译操作栏 -->
+                <div class="translation-actions">
+                    <div class="row align-items-center">
+                        <div class="col-md-6">
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-primary" id="translateBtn">
+                                    <i class="fas fa-language me-2"></i>翻译
+                                </button>
+                                <button class="btn btn-warning" id="polishBtn" disabled>
+                                    <i class="fas fa-magic me-2"></i>润色
+                                </button>
+                                <button class="btn btn-outline-secondary" id="clearBtn">
+                                    <i class="fas fa-eraser me-2"></i>清空
+                                </button>
+                                <button class="btn btn-outline-secondary" id="detectBtn">
+                                    <i class="fas fa-search me-2"></i>检测语言
+                                </button>
+                                <button class="btn btn-outline-info" id="copyBtn" disabled>
+                                    <i class="fas fa-copy me-2"></i>复制
+                                </button>
+                                <button class="btn btn-outline-success" id="saveBtn" disabled>
+                                    <i class="fas fa-save me-2"></i>保存
+                                </button>
+                                <button class="btn btn-outline-primary" id="speakSourceBtn">
+                                    <i class="fas fa-volume-up me-2"></i>朗读原文
+                                </button>
+                                <button class="btn btn-outline-primary" id="speakTargetBtn" disabled>
+                                    <i class="fas fa-volume-up me-2"></i>朗读译文
+                                </button>
+                                <button class="btn btn-outline-danger" id="stopSpeakBtn">
+                                    <i class="fas fa-stop me-2"></i>停止朗读
+                                </button>
+                            </div>
+                        </div>
+                        <div class="col-md-6 text-end">
+                            <div class="d-flex align-items-center justify-content-end gap-3">
+                                <div id="translationInfo" class="text-muted small d-none">
+                                    <span id="translationTime"></span> • 
+                                    <span id="detectedLanguage"></span>
+                                </div>
+                                <div id="qualityScore" class="quality-score d-none">
+                                    质量评分: <span id="scoreValue">--</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 替代翻译 -->
+            <div class="alternative-translations d-none" id="alternativeTranslations">
+                <h6 class="mb-3">替代翻译</h6>
+                <div id="alternativeList"></div>
+            </div>
+
+            <!-- 最近翻译和历史记录 -->
+            <div class="row mt-4">
+                <div class="col-lg-8">
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">翻译详情</h5>
+                            <div class="btn-group btn-group-sm" role="group">
+                                <button type="button" class="btn btn-outline-primary active" data-tab="details">详情</button>
+                                <button type="button" class="btn btn-outline-primary" data-tab="terminology">术语</button>
+                                <button type="button" class="btn btn-outline-primary" data-tab="quality">质量</button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <!-- 翻译详情 -->
+                            <div class="tab-content" id="details-tab">
+                                <div class="row">
+                                    <div class="col-sm-6">
+                                        <strong>翻译引擎:</strong> <span id="usedEngine">--</span>
+                                    </div>
+                                    <div class="col-sm-6">
+                                        <strong>翻译时间:</strong> <span id="translationDuration">--</span>
+                                    </div>
+                                    <div class="col-sm-6 mt-2">
+                                        <strong>字符数:</strong> <span id="characterCount">--</span>
+                                    </div>
+                                    <div class="col-sm-6 mt-2">
+                                        <strong>检测语言:</strong> <span id="detectedLang">--</span>
+                                    </div>
+                                    <div class="col-sm-6 mt-2">
+                <strong>消耗点数:</strong> <span id="usedPoints">--</span>
+                                    </div>
+                                    <div class="col-sm-6 mt-2">
+                <strong>点数余额:</strong> <span id="pointsBalance">--</span>
+                                    </div>
+                                </div>
+                                <div class="mt-3">
+                                    <strong>置信度:</strong>
+                                    <div class="confidence-bar mt-1">
+                                        <div class="confidence-fill" id="confidenceBar" style="width: 0%"></div>
+                                    </div>
+                                    <small class="text-muted">置信度: <span id="confidenceValue">0%</span></small>
+                                </div>
+                            </div>
+
+                            <!-- 术语匹配 -->
+                            <div class="tab-content d-none" id="terminology-tab">
+                                <div id="terminologyMatches">
+                                    <p class="text-muted">暂无术语匹配</p>
+                                </div>
+                            </div>
+
+                            <!-- 质量评估 -->
+                            <div class="tab-content d-none" id="quality-tab">
+                                <div id="qualityAssessmentDetails">
+                                    <p class="text-muted">暂无质量评估数据</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">最近翻译</h5>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="recent-translations">
+                                <div class="list-group list-group-flush" id="recentTranslationsList">
+                                    <div class="list-group-item text-center py-4">
+                                        <i class="fas fa-history fa-2x text-muted mb-2"></i>
+                                        <p class="text-muted mb-0">暂无翻译历史</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card-footer">
+                            <a href="/history" th:href="@{/history}" class="btn btn-sm btn-outline-primary w-100">
+                                查看全部历史
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 页面特定脚本 -->
+    <th:block th:fragment="page-scripts">
+        <script>
+            $(document).ready(function() {
+                let translationHistory = [];
+
+                // Web Speech 语音朗读支持
+                const Speech = {
+                    voices: [],
+                    init() {
+                        try {
+                            this.voices = window.speechSynthesis.getVoices();
+                            window.speechSynthesis.onvoiceschanged = () => {
+                                this.voices = window.speechSynthesis.getVoices();
+                            };
+                        } catch (e) {
+                            console.warn('此浏览器不支持 speechSynthesis:', e);
+                        }
+                    },
+                    mapLang(code) {
+                        const map = {
+                            'zh': 'zh-CN',
+                            'en': 'en-US',
+                            'ja': 'ja-JP',
+                            'ko': 'ko-KR',
+                            'fr': 'fr-FR',
+                            'de': 'de-DE',
+                            'es': 'es-ES',
+                            'ru': 'ru-RU',
+                            'pt': 'pt-PT',
+                            'ar': 'ar-SA'
+                        };
+                        return map[code] || 'en-US';
+                    },
+                    pickVoice(langTag) {
+                        if (!this.voices || this.voices.length === 0) return null;
+                        const exact = this.voices.find(v => v.lang === langTag);
+                        if (exact) return exact;
+                        return this.voices.find(v => v.lang && v.lang.startsWith(langTag.split('-')[0])) || null;
+                    },
+                    speak(text, langCode) {
+                        if (!text) {
+                            Utils.showToast('没有可朗读的文本', 'warning');
+                            return;
+                        }
+                        if (!('speechSynthesis' in window)) {
+                            Utils.showToast('当前浏览器不支持朗读功能', 'danger');
+                            return;
+                        }
+                        const lang = this.mapLang(langCode);
+                        const utter = new SpeechSynthesisUtterance(text);
+                        utter.lang = lang;
+                        const voice = this.pickVoice(lang);
+                        if (voice) utter.voice = voice;
+                        utter.rate = 1.0;
+                        utter.pitch = 1.0;
+                        window.speechSynthesis.cancel();
+                        window.speechSynthesis.speak(utter);
+                    },
+                    stop() {
+                        if ('speechSynthesis' in window) {
+                            window.speechSynthesis.cancel();
+                        }
+                    }
+                };
+                Speech.init();
+
+                // 字符计数
+                $('#sourceText').on('input', function() {
+                    const count = $(this).val().length;
+                    $('#charCount').text(count);
+                    
+                    if (count > 4500) {
+                        $('#charCount').addClass('text-warning');
+                    } else if (count > 4800) {
+                        $('#charCount').addClass('text-danger');
+                    } else {
+                        $('#charCount').removeClass('text-warning text-danger');
+                    }
+                });
+
+                // 交换语言
+                $('#swapLanguages').click(function() {
+                    const sourceVal = $('#sourceLanguage').val();
+                    const targetVal = $('#targetLanguage').val();
+                    
+                    if (sourceVal !== 'auto') {
+                        $('#sourceLanguage').val(targetVal);
+                        $('#targetLanguage').val(sourceVal);
+                        
+                        // 如果有翻译内容，交换文本
+                        const sourceText = $('#sourceText').val();
+                        const targetText = $('#targetText').val();
+                        if (sourceText && targetText) {
+                            $('#sourceText').val(targetText);
+                            $('#targetText').val(sourceText);
+                        }
+                    }
+                });
+
+                // 翻译功能
+                $('#translateBtn').click(function() {
+                    const sourceText = $('#sourceText').val().trim();
+                    if (!sourceText) {
+                        Utils.showToast('请输入要翻译的文本', 'warning');
+                        return;
+                    }
+
+                    performTranslation();
+                });
+
+                // 回车键翻译（Ctrl+Enter）
+                $('#sourceText').keydown(function(e) {
+                    if (e.ctrlKey && e.keyCode === 13) {
+                        $('#translateBtn').click();
+                    }
+                });
+
+                // 清空功能
+                $('#clearBtn').click(function() {
+                    $('#sourceText').val('');
+                    $('#targetText').val('');
+                    $('#charCount').text('0');
+                    $('#copyBtn, #saveBtn').prop('disabled', true);
+                    $('#alternativeTranslations').addClass('d-none');
+                    resetTranslationDetails();
+                });
+
+                // 复制功能
+                $('#copyBtn').click(function() {
+                    const targetText = $('#targetText').val();
+                    if (targetText) {
+                        navigator.clipboard.writeText(targetText).then(function() {
+                            Utils.showToast('翻译结果已复制到剪贴板', 'success');
+                        });
+                    }
+                });
+
+                // 源文本复制/粘贴与译文复制按钮
+                $('#copySourceBtn').click(function() {
+                    const text = $('#sourceText').val();
+                    if (text && text.trim()) {
+                        navigator.clipboard.writeText(text).then(function() {
+                            Utils.showToast('源文本已复制到剪贴板', 'success');
+                        }).catch(function() {
+                            Utils.showToast('复制失败，请检查浏览器权限', 'danger');
+                        });
+                    } else {
+                        Utils.showToast('没有可复制的源文本', 'warning');
+                    }
+                });
+
+                $('#pasteSourceBtn').click(async function() {
+                    try {
+                        const text = await navigator.clipboard.readText();
+                        if (text) {
+                            $('#sourceText').val(text).trigger('input');
+                            Utils.showToast('已粘贴到源文本', 'success');
+                        } else {
+                            Utils.showToast('剪贴板为空', 'warning');
+                        }
+                    } catch (e) {
+                        Utils.showToast('粘贴失败，请允许剪贴板读取权限', 'warning');
+                    }
+                });
+
+                $('#copyTargetBtn').click(function() {
+                    const text = $('#targetText').val();
+                    if (text && text.trim()) {
+                        navigator.clipboard.writeText(text).then(function() {
+                            Utils.showToast('译文已复制到剪贴板', 'success');
+                        }).catch(function() {
+                            Utils.showToast('复制失败，请检查浏览器权限', 'danger');
+                        });
+                    } else {
+                        Utils.showToast('没有可复制的译文', 'warning');
+                    }
+                });
+
+                // 保存功能
+                $('#saveBtn').click(function() {
+                    const sourceText = $('#sourceText').val();
+                    const targetText = $('#targetText').val();
+                    if (sourceText && targetText) {
+                        // 这里可以调用API保存翻译记录
+                        Utils.showToast('翻译记录已保存', 'success');
+                    }
+                });
+
+                // 朗读原文
+                $('#speakSourceBtn').click(function() {
+                    const text = $('#sourceText').val().trim();
+                    const langCode = $('#sourceLanguage').val() || 'zh';
+                    Speech.speak(text, langCode);
+                });
+
+                // 朗读译文
+                $('#speakTargetBtn').click(function() {
+                    const text = $('#targetText').val().trim();
+                    const langCode = $('#targetLanguage').val() || 'en';
+                    Speech.speak(text, langCode);
+                });
+
+                // 停止朗读
+                $('#stopSpeakBtn').click(function() {
+                    Speech.stop();
+                });
+
+                // 检测语言
+                $('#detectBtn').click(function() {
+                    const text = $('#sourceText').val().trim();
+                    if (!text) {
+                        Utils.showToast('请输入要检测的文本', 'warning');
+                        return;
+                    }
+                $.ajax({
+                    url: '/api/translation/detect-language',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify(text),
+                    success: function(resp) {
+                            // 兼容后端不同包装结构：
+                            // 1) { success, data: { language, ... } }
+                            // 2) { code, data: { data: { language, ... }, success } }
+                            const payload = (resp && resp.data && resp.data.data) ? resp.data.data
+                                            : (resp && resp.data ? resp.data : resp);
+                            const lang = payload && (payload.language || payload.detectedLanguage);
+                            if (lang) {
+                                $('#sourceLanguage').val(lang);
+                                Utils.showToast('检测到语言: ' + lang, 'success');
+                            } else {
+                                const msg = (payload && payload.errorMessage) || (resp && resp.message) || '语言检测失败';
+                                Utils.showToast(msg, 'danger');
+                            }
+                    },
+                    error: function(xhr, status, error) {
+                        Utils.handleAjaxError(xhr, status, error);
+                    }
+                });
+                });
+
+                // 标签页切换
+                $('[data-tab]').click(function() {
+                    const tab = $(this).data('tab');
+                    $('[data-tab]').removeClass('active');
+                    $(this).addClass('active');
+                    $('.tab-content').addClass('d-none');
+                    $(`#${tab}-tab`).removeClass('d-none');
+                });
+
+                // 执行翻译
+                function performTranslation() {
+                    const sourceText = $('#sourceText').val().trim();
+                    const sourceLanguage = $('#sourceLanguage').val();
+                    const targetLanguage = $('#targetLanguage').val();
+                    const engine = $('#translationEngine').val();
+                    const translationType = $('#translationType').val();
+                    const useTerminology = $('#useTerminology').is(':checked');
+                    const qualityAssessment = $('#qualityAssessment').is(':checked');
+
+                    // 显示加载状态
+                    $('#loadingOverlay').removeClass('d-none');
+                    $('#translateBtn').prop('disabled', true);
+
+                    // 构建请求数据
+                    const u = JSON.parse(localStorage.getItem('authUser') || 'null');
+                    const requestData = {
+                        sourceText: sourceText,
+                        sourceLanguage: sourceLanguage,
+                        targetLanguage: targetLanguage,
+                        translationType: translationType,
+                        engine: engine,
+                        useTerminology: useTerminology,
+                        needQualityAssessment: qualityAssessment,
+                        userId: (u && u.id) ? String(u.id) : ''
+                    };
+
+                    // 调用翻译API
+                    $.ajax({
+                        url: '/api/translation/translate',
+                        method: 'POST',
+                        contentType: 'application/json',
+                        headers: (function(){
+                            try {
+                                const token = (typeof getAuthToken === 'function') ? getAuthToken() : null;
+                                const h = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
+                                if (token) h['Authorization'] = 'Bearer ' + token;
+                                return h;
+                            } catch (e) {
+                                return { 'Content-Type': 'application/json', 'Accept': 'application/json' };
+                            }
+                        })(),
+                        data: JSON.stringify(requestData),
+                        success: function(response) {
+                            if (response.success) {
+                                displayTranslationResult(response.data);
+                                addToHistory(requestData, response.data);
+                            } else {
+                                Utils.showToast(response.message || '翻译失败', 'danger');
+                            }
+                        },
+                        error: function(xhr, status, error) {
+                            Utils.handleAjaxError(xhr, status, error);
+                        },
+                        complete: function() {
+                            $('#loadingOverlay').addClass('d-none');
+                            $('#translateBtn').prop('disabled', false);
+                        }
+                    });
+                }
+
+                // 显示翻译结果
+                function displayTranslationResult(result) {
+                    $('#targetText').val(result.translatedText).addClass('translation-result');
+                    $('#copyBtn, #saveBtn').prop('disabled', false);
+                    $('#speakTargetBtn').prop('disabled', !result.translatedText);
+                    $('#polishBtn').prop('disabled', !(result.translatedText && result.translatedText.trim().length > 0));
+
+                    // 更新翻译详情
+                    $('#usedEngine').text(result.engine || '--');
+                    $('#translationDuration').text(result.duration ? Utils.formatDuration(result.duration) : '--');
+                    $('#characterCount').text(result.characterCount || '--');
+                    $('#detectedLang').text(result.detectedLanguage || '--');
+                    $('#usedPoints').text(
+                        typeof result.usedPoints !== 'undefined' && result.usedPoints !== null
+                            ? String(result.usedPoints)
+                            : '--'
+                    );
+                    $('#pointsBalance').text(
+                        typeof result.pointsBalance !== 'undefined' && result.pointsBalance !== null
+                            ? String(result.pointsBalance)
+                            : '--'
+                    );
+                    $('#confidenceValue').text((result.confidence || 0) + '%');
+                    $('#confidenceBar').css('width', (result.confidence || 0) + '%');
+
+                    // 显示翻译信息
+                    if (result.duration && result.detectedLanguage) {
+                        $('#translationTime').text(Utils.formatDuration(result.duration));
+                        $('#detectedLanguage').text('检测: ' + result.detectedLanguage);
+                        $('#translationInfo').removeClass('d-none');
+                    }
+
+                    // 显示质量评分
+                    if (result.qualityScore) {
+                        $('#scoreValue').text(result.qualityScore.overallScore);
+                        $('#qualityScore').removeClass('d-none');
+                        displayQualityDetails(result.qualityScore);
+                    }
+
+                    // 显示替代翻译
+                    if (result.alternatives && result.alternatives.length > 0 && $('#showAlternatives').is(':checked')) {
+                        displayAlternatives(result.alternatives);
+                    }
+
+                    // 显示术语匹配
+                    if (result.terminologyMatches && result.terminologyMatches.length > 0) {
+                        displayTerminologyMatches(result.terminologyMatches);
+                    }
+                }
+
+                // 当用户修改译文时，动态启用/禁用“后编辑”按钮
+                $('#targetText').on('input', function() {
+                    const hasText = !!$(this).val().trim();
+                    $('#polishBtn').prop('disabled', !hasText);
+                });
+
+                // 触发 LLM 后编辑
+                $('#polishBtn').on('click', function() {
+                    const mtText = $('#targetText').val().trim();
+                    if (!mtText) {
+                        Utils.showToast('请先生成或填写待润色的译文', 'warning');
+                        return;
+                    }
+                    const sourceText = $('#sourceText').val();
+                    const sourceLanguage = $('#sourceLanguage').val();
+                    const targetLanguage = $('#targetLanguage').val();
+                    const translationType = $('#translationType').val(); // 用作风格预设
+
+                    const originalHtml = $(this).html();
+                    $(this).html('<i class="fas fa-spinner fa-spin me-2"></i>润色中...');
+                    $(this).prop('disabled', true);
+
+                    const payload = {
+                        sourceText: sourceText,
+                        mtText: mtText,
+                        sourceLanguage: sourceLanguage,
+                        targetLanguage: targetLanguage,
+                        style: mapStylePreset(translationType)
+                    };
+
+                    $.ajax({
+                        url: '/api/translation/polish',
+                        method: 'POST',
+                        contentType: 'application/json',
+                        data: JSON.stringify(payload),
+                        success: function(resp) {
+                            if (resp && resp.success && resp.data) {
+                                const data = resp.data;
+                                if (data.polishedText) {
+                                    $('#targetText').val(data.polishedText);
+                                    $('#copyBtn').prop('disabled', !data.polishedText);
+                                    $('#speakTargetBtn').prop('disabled', !data.polishedText);
+                                    if (data.qualityScore) {
+                                        $('#qualityScore').removeClass('d-none');
+                                        $('#scoreValue').text(Math.round(data.qualityScore));
+                                    }
+                                    Utils.showToast('已完成后编辑', 'success');
+                                } else {
+                                    Utils.showToast('后编辑未返回有效内容', 'warning');
+                                }
+                            } else {
+                                const msg = resp && resp.message ? resp.message : '后编辑失败';
+                                Utils.showToast(msg, 'danger');
+                            }
+                        },
+                        error: function(xhr, status, error) {
+                            Utils.handleAjaxError(xhr, status, error);
+                        },
+                        complete: function() {
+                            $('#polishBtn').html(originalHtml);
+                            $('#polishBtn').prop('disabled', !$('#targetText').val().trim());
+                        }
+                    });
+                });
+
+                // 将翻译类型映射为风格提示
+                function mapStylePreset(type) {
+                    switch (type) {
+                        case 'business':
+                            return '语气正式、简洁；避免俚语；适合商务邮件和方案。';
+                        case 'technical':
+                            return '术语统一、句式清晰；优先使用专业术语与被动语态。';
+                        case 'medical':
+                            return '用词谨慎、术语规范；避免歧义；遵循医学写作风格。';
+                        case 'legal':
+                            return '措辞严谨、避免多义；保持正式、符合法律文本风格。';
+                        default:
+                            return '用词自然、标点规范、保持专业与简洁。';
+                    }
+                }
+
+                // 显示替代翻译
+                function displayAlternatives(alternatives) {
+                    const alternativeList = $('#alternativeList');
+                    alternativeList.empty();
+
+                    alternatives.forEach(function(alt, index) {
+                        const item = $(`
+                            <div class="alternative-item mb-2" data-text="${alt.text}">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <span>${alt.text}</span>
+                                    <small class="text-muted">${alt.confidence}%</small>
+                                </div>
+                            </div>
+                        `);
+                        alternativeList.append(item);
+                    });
+
+                    $('#alternativeTranslations').removeClass('d-none');
+
+                    // 点击替代翻译
+                    $('.alternative-item').click(function() {
+                        const text = $(this).data('text');
+                        $('#targetText').val(text);
+                    });
+                }
+
+                // 显示质量评估详情
+                function displayQualityDetails(qualityScore) {
+                    const qualityDetails = $(`
+                        <div class="row">
+                            <div class="col-sm-6">
+                                <strong>准确性:</strong> ${qualityScore.accuracy}/5
+                            </div>
+                            <div class="col-sm-6">
+                                <strong>流畅性:</strong> ${qualityScore.fluency}/5
+                            </div>
+                            <div class="col-sm-6 mt-2">
+                                <strong>完整性:</strong> ${qualityScore.completeness}/5
+                            </div>
+                            <div class="col-sm-6 mt-2">
+                                <strong>一致性:</strong> ${qualityScore.consistency}/5
+                            </div>
+                        </div>
+                        ${qualityScore.suggestions ? `
+                            <div class="mt-3">
+                                <strong>改进建议:</strong>
+                                <ul class="mb-0">
+                                    ${qualityScore.suggestions.map(s => `<li>${s}</li>`).join('')}
+                                </ul>
+                            </div>
+                        ` : ''}
+                    `);
+                    $('#qualityAssessmentDetails').html(qualityDetails);
+                }
+
+                // 显示术语匹配
+                function displayTerminologyMatches(matches) {
+                    const terminologyContent = $(`
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>原文术语</th>
+                                        <th>译文术语</th>
+                                        <th>领域</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${matches.map(match => `
+                                        <tr>
+                                            <td>${match.sourceTerm}</td>
+                                            <td>${match.targetTerm}</td>
+                                            <td><span class="badge bg-secondary">${match.domain}</span></td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    `);
+                    $('#terminologyMatches').html(terminologyContent);
+                }
+
+                // 添加到历史记录
+                function addToHistory(request, result) {
+                    const historyItem = {
+                        sourceText: request.sourceText,
+                        translatedText: result.translatedText,
+                        sourceLanguage: request.sourceLanguage,
+                        targetLanguage: request.targetLanguage,
+                        engine: result.engine,
+                        timestamp: new Date(),
+                        timeAgo: '刚刚'
+                    };
+
+                    translationHistory.unshift(historyItem);
+                    if (translationHistory.length > 10) {
+                        translationHistory = translationHistory.slice(0, 10);
+                    }
+
+                    updateHistoryDisplay();
+                }
+
+                // 更新历史记录显示
+                function updateHistoryDisplay() {
+                    const historyList = $('#recentTranslationsList');
+                    historyList.empty();
+
+                    if (translationHistory.length === 0) {
+                        historyList.html(`
+                            <div class="list-group-item text-center py-4">
+                                <i class="fas fa-history fa-2x text-muted mb-2"></i>
+                                <p class="text-muted mb-0">暂无翻译历史</p>
+                            </div>
+                        `);
+                        return;
+                    }
+
+                    translationHistory.forEach(function(item) {
+                        const historyItem = $(`
+                            <div class="list-group-item recent-item">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div class="flex-grow-1">
+                                        <h6 class="mb-1 text-truncate">${item.sourceText}</h6>
+                                        <p class="mb-1 text-muted text-truncate">${item.translatedText}</p>
+                                        <small class="text-muted">
+                                            ${item.sourceLanguage} → ${item.targetLanguage} • ${item.timeAgo}
+                                        </small>
+                                    </div>
+                                    <span class="badge bg-primary">${item.engine}</span>
+                                </div>
+                            </div>
+                        `);
+                        
+                        historyItem.click(function() {
+                            $('#sourceText').val(item.sourceText);
+                            $('#targetText').val(item.translatedText);
+                            $('#sourceLanguage').val(item.sourceLanguage);
+                            $('#targetLanguage').val(item.targetLanguage);
+                            $('#copyBtn, #saveBtn').prop('disabled', false);
+                        });
+
+                        historyList.append(historyItem);
+                    });
+                }
+
+                // 重置翻译详情
+                function resetTranslationDetails() {
+                    $('#usedEngine, #translationDuration, #characterCount, #detectedLang').text('--');
+                    $('#confidenceValue').text('0%');
+                    $('#confidenceBar').css('width', '0%');
+                    $('#translationInfo, #qualityScore').addClass('d-none');
+                    $('#qualityAssessmentDetails').html('<p class="text-muted">暂无质量评估数据</p>');
+                    $('#terminologyMatches').html('<p class="text-muted">暂无术语匹配</p>');
+                }
+
+                // 初始化
+                updateHistoryDisplay();
+            });
+        </script>
+    </th:block>
+</body>
+</html>

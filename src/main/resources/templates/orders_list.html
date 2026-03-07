@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout/base :: layout(~{::title}, ~{::content}, ~{::page-styles}, ~{::page-scripts})}">
+<head>
+    <title>我的订单 - 智能翻译助手</title>
+    <th:block th:fragment="page-styles">
+        <style>
+            .orders-container { max-width: 1200px; margin: 0 auto; }
+            .order-status-badge { font-size: 0.85rem; }
+            .table thead th { white-space: nowrap; }
+            .order-actions { flex-wrap: nowrap; }
+            .order-actions .btn { white-space: nowrap; }
+        </style>
+    </th:block>
+</head>
+<body>
+<div th:fragment="content">
+    <div class="orders-container">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="h3 mb-0">我的订单</h1>
+        </div>
+
+        <div id="ordersAlert" class="alert alert-info d-none"></div>
+
+        <div class="card">
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle" id="ordersTable">
+                        <thead>
+                        <tr>
+                            <th>订单号</th>
+                            <th>会员类型</th>
+                            <th>时长(月)</th>
+                            <th>金额</th>
+                            <th>订单状态</th>
+                            <th>支付状态</th>
+                            <th>创建时间</th>
+                            <th>支付截止</th>
+                            <th>操作</th>
+                        </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<th:block th:fragment="page-scripts">
+    <script>
+        function typeToZh(t) {
+            switch (String(t || '').toUpperCase()) {
+                case 'MONTHLY': return '包月会员';
+                case 'QUARTERLY': return '包季会员';
+                case 'YEARLY': return '包年会员';
+                default: return '未知类型';
+            }
+        }
+
+        function statusToZh(s) {
+            switch (String(s || '').toUpperCase()) {
+                case 'PENDING': return '待支付';
+                case 'PAID': return '已完成';
+                case 'CANCELLED': return '已取消';
+                case 'REFUNDED': return '已退款';
+                default: return '未知状态';
+            }
+        }
+
+        function payStatusToZh(s, expired) {
+            const S = String(s || '').toUpperCase();
+            if (S === 'PAID') return '已支付';
+            if (S === 'PENDING') return expired ? '已过期' : '待支付';
+            if (S === 'CANCELLED') return '已取消';
+            if (S === 'REFUNDED') return '已退款';
+            return '未知状态';
+        }
+
+        function fmtTime(t) {
+            if (!t) return '-';
+            // Expect LocalDateTime string e.g. "2025-11-20T12:34:56"
+            const d = (typeof t === 'string') ? new Date(t.replace('T', ' ')) : new Date(t);
+            if (isNaN(d.getTime())) return '-';
+            const pad = (n) => (n < 10 ? '0' + n : '' + n);
+            return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+        }
+
+        function getUserId() {
+            try {
+                const u = JSON.parse(localStorage.getItem('authUser') || 'null');
+                return u && (u.id != null) ? String(u.id) : null;
+            } catch (_) { return null; }
+        }
+
+        function isExpired(expiresAt) {
+            if (!expiresAt) return false;
+            const d = new Date((typeof expiresAt === 'string') ? expiresAt.replace('T',' ') : expiresAt);
+            return !isNaN(d.getTime()) && Date.now() > d.getTime();
+        }
+
+        function renderOrders(list) {
+            const tbody = document.querySelector('#ordersTable tbody');
+            tbody.innerHTML = '';
+            if (!Array.isArray(list) || list.length === 0) {
+                const alert = document.getElementById('ordersAlert');
+                alert.textContent = '暂无订单，去会员页开通试试吧！';
+                alert.classList.remove('d-none');
+                return;
+            }
+            for (const o of list) {
+                const tr = document.createElement('tr');
+                const expired = isExpired(o.expiresAt);
+                tr.innerHTML = `
+                    <td><a href="/orders/${o.orderNo}">${o.orderNo}</a></td>
+                    <td>${typeToZh(o.type)}</td>
+                    <td>${o.months}</td>
+                    <td>${o.amount} ${o.currency || 'CNY'}</td>
+                    <td>
+                        <span class="badge ${o.status==='PENDING' ? 'bg-warning' : (o.status==='PAID' ? 'bg-success' : 'bg-secondary')} order-status-badge">${statusToZh(o.status)}</span>
+                    </td>
+                    <td>
+                        <span class="badge ${o.status==='PAID' ? 'bg-success' : (o.status==='PENDING' ? (expired ? 'bg-secondary' : 'bg-warning') : 'bg-secondary')} order-status-badge">${payStatusToZh(o.status, expired)}</span>
+                    </td>
+                    <td>${fmtTime(o.createdAt)}</td>
+                    <td>${fmtTime(o.expiresAt)}</td>
+                    <td class="d-flex gap-2 order-actions">
+                        <a class="btn btn-sm btn-outline-primary text-nowrap" href="/orders/${o.orderNo}">查看详情</a>
+                        ${o.status==='PENDING' && !expired ? `<a class="btn btn-sm btn-primary text-nowrap" href="/membership/pay?orderNo=${o.orderNo}">去支付</a>` : ``}
+                    </td>`;
+                tbody.appendChild(tr);
+            }
+        }
+
+        async function loadOrders() {
+            const userId = getUserId();
+            if (!userId) {
+                const alert = document.getElementById('ordersAlert');
+                alert.textContent = '请先登录以查看您的订单。';
+                alert.classList.remove('d-none');
+                return;
+            }
+            try {
+                const res = await fetch(`/api/membership/orders?userId=${encodeURIComponent(userId)}`);
+                const json = await res.json();
+                let list = null;
+                // 兼容统一响应包装 ApiResponse { success, data }
+                if (json && json.data) {
+                    // 兼容我们在后端返回 Map{"data": [...]} 的结构
+                    list = Array.isArray(json.data?.data) ? json.data.data
+                          : (Array.isArray(json.data) ? json.data : null);
+                }
+                // 兜底：若依然不是数组，尝试直接使用原始对象
+                if (!Array.isArray(list)) {
+                    list = Array.isArray(json) ? json : [];
+                }
+                renderOrders(list);
+            } catch (e) {
+                const alert = document.getElementById('ordersAlert');
+                alert.textContent = '加载订单失败，请稍后重试。';
+                alert.classList.remove('d-none');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', loadOrders);
+    </script>
+</th:block>
+</body>
+</html>

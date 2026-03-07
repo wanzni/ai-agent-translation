@@ -1,0 +1,3 @@
+/* Basic placeholder stylesheet for mock payment pages */
+html, body { margin: 0; padding: 0; }
+.container { max-width: 960px; margin: 0 auto; }

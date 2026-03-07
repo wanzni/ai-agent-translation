@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout/base :: layout(~{::title}, ~{::content}, ~{::page-styles}, ~{::page-scripts})}">
+<head>
+    <title>质量评估 - 智能翻译助手</title>
+    
+    <!-- 页面特定样式 -->
+    <th:block th:fragment="page-styles">
+        <style>
+            .quality-container {
+                max-width: 1200px;
+                margin: 0 auto;
+            }
+
+            .quality-card {
+                background: white;
+                border-radius: 0.75rem;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                overflow: hidden;
+                margin-bottom: 1.5rem;
+            }
+
+            .quality-header {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 1.5rem;
+            }
+
+            .quality-score-display {
+                text-align: center;
+                padding: 2rem;
+                background: #f8fafc;
+                border-radius: 0.75rem;
+                margin: 1.5rem 0;
+            }
+
+            .score-circle {
+                width: 120px;
+                height: 120px;
+                border-radius: 50%;
+                background: conic-gradient(#10b981 70%, #e2e8f0 0);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin: 0 auto 1rem;
+                position: relative;
+            }
+
+            .score-inner {
+                width: 90px;
+                height: 90px;
+                border-radius: 50%;
+                background: white;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 2rem;
+                font-weight: bold;
+                color: #10b981;
+            }
+
+            .dimension-card {
+                background: #f8fafc;
+                border-radius: 0.75rem;
+                padding: 1.5rem;
+                margin-bottom: 1rem;
+                border-left: 4px solid #2563eb;
+            }
+
+            .dimension-high {
+                border-left-color: #10b981;
+            }
+
+            .dimension-medium {
+                border-left-color: #f59e0b;
+            }
+
+            .dimension-low {
+                border-left-color: #ef4444;
+            }
+
+            .dimension-score {
+                font-size: 1.5rem;
+                font-weight: bold;
+            }
+
+            .progress-container {
+                height: 8px;
+                background: #e2e8f0;
+                border-radius: 4px;
+                overflow: hidden;
+                margin-top: 0.5rem;
+            }
+
+            .progress-bar {
+                height: 100%;
+                border-radius: 4px;
+            }
+
+            .progress-high {
+                background: #10b981;
+            }
+
+            .progress-medium {
+                background: #f59e0b;
+            }
+
+            .progress-low {
+                background: #ef4444;
+            }
+
+            .feedback-section {
+                background: white;
+                border-radius: 0.75rem;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                padding: 1.5rem;
+                margin-top: 1.5rem;
+            }
+
+            .improvement-suggestion {
+                background: #eff6ff;
+                border-left: 4px solid #3b82f6;
+                padding: 1rem;
+                border-radius: 0 0.5rem 0.5rem 0;
+                margin-bottom: 1rem;
+            }
+
+            .quality-chart {
+                height: 300px;
+                background: #f8fafc;
+                border-radius: 0.5rem;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+        </style>
+    </th:block>
+</head>
+
+<body>
+    <div th:fragment="content">
+        <div class="quality-container">
+            <!-- 页面标题 -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1 class="h3 mb-0">翻译质量评估</h1>
+                <button class="btn btn-primary">
+                    <i class="fas fa-redo me-1"></i>重新评估
+                </button>
+            </div>
+
+            <!-- 质量评分展示 -->
+            <div class="quality-card">
+                <div class="quality-header">
+                    <h2 class="h4 mb-0">整体质量评分</h2>
+                </div>
+                <div class="card-body">
+                    <div class="quality-score-display">
+                        <div class="score-circle">
+                            <div class="score-inner">4.2</div>
+                        </div>
+                        <h3>良好</h3>
+                        <p class="text-muted">基于多维度综合评估</p>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="dimension-card dimension-high">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <h4 class="h5 mb-0">准确性</h4>
+                                    <span class="dimension-score text-success">4.5</span>
+                                </div>
+                                <div class="progress-container">
+                                    <div class="progress-bar progress-high" style="width: 90%"></div>
+                                </div>
+                                <p class="mt-2 mb-0 text-muted">术语使用准确，语义传达正确</p>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="dimension-card dimension-high">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <h4 class="h5 mb-0">流畅性</h4>
+                                    <span class="dimension-score text-success">4.3</span>
+                                </div>
+                                <div class="progress-container">
+                                    <div class="progress-bar progress-high" style="width: 86%"></div>
+                                </div>
+                                <p class="mt-2 mb-0 text-muted">语言表达自然，符合目标语言习惯</p>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="dimension-card dimension-medium">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <h4 class="h5 mb-0">一致性</h4>
+                                    <span class="dimension-score text-warning">3.8</span>
+                                </div>
+                                <div class="progress-container">
+                                    <div class="progress-bar progress-medium" style="width: 76%"></div>
+                                </div>
+                                <p class="mt-2 mb-0 text-muted">术语使用需保持一致</p>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="dimension-card dimension-high">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <h4 class="h5 mb-0">完整性</h4>
+                                    <span class="dimension-score text-success">4.2</span>
+                                </div>
+                                <div class="progress-container">
+                                    <div class="progress-bar progress-high" style="width: 84%"></div>
+                                </div>
+                                <p class="mt-2 mb-0 text-muted">内容完整，无遗漏信息</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 质量趋势图表 -->
+            <div class="quality-card">
+                <div class="quality-header">
+                    <h2 class="h4 mb-0">质量趋势</h2>
+                </div>
+                <div class="card-body">
+                    <div class="quality-chart">
+                        <div class="text-center">
+                            <i class="fas fa-chart-line fa-3x text-muted mb-2"></i>
+                            <p class="text-muted">质量趋势图表</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 改进建议 -->
+            <div class="feedback-section">
+                <h3 class="h4 mb-3">改进建议</h3>
+                <div class="improvement-suggestion">
+                    <h4 class="h6 text-primary">
+                        <i class="fas fa-lightbulb me-2"></i>术语一致性建议
+                    </h4>
+                    <p class="mb-0">检测到"人工智能"在文档中出现了不同的翻译，建议统一使用"AI"或"人工智能"。</p>
+                </div>
+                <div class="improvement-suggestion">
+                    <h4 class="h6 text-primary">
+                        <i class="fas fa-lightbulb me-2"></i>语境优化建议
+                    </h4>
+                    <p class="mb-0">"Good morning"在商务场景中建议翻译为"早上好"，在正式场合可使用"您好"。</p>
+                </div>
+                <div class="improvement-suggestion">
+                    <h4 class="h6 text-primary">
+                        <i class="fas fa-lightbulb me-2"></i>文化适应性建议
+                    </h4>
+                    <p class="mb-0">某些表达方式可能需要根据目标受众的文化背景进行调整。</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 页面特定脚本 -->
+    <th:block th:fragment="page-scripts">
+        <script>
+            $(document).ready(function() {
+                // 图表初始化（模拟）
+                console.log('质量评估图表初始化');
+            });
+        </script>
+    </th:block>
+</body>
+</html>

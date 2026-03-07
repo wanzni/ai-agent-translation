@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+    <!-- 侧边栏导航 -->
+    <div th:fragment="sidebar">
+        <div class="mb-4">
+            <h6 class="text-muted text-uppercase fw-bold mb-3">翻译功能</h6>
+            <nav class="nav flex-column">
+                <a class="nav-link" href="/translate" th:href="@{/translate}" th:classappend="${#strings.equals(activePage, 'translate')} ? 'active' : ''">
+                    <i class="fas fa-language me-2"></i>文本翻译
+                </a>
+                <a class="nav-link" href="/translate/batch" th:href="@{/translate/batch}" th:classappend="${#strings.equals(activePage, 'batch-translate')} ? 'active' : ''">
+                    <i class="fas fa-list me-2"></i>批量翻译
+                </a>
+                <a class="nav-link" href="/document" th:href="@{/document}" th:classappend="${#strings.equals(activePage, 'document')} ? 'active' : ''">
+                    <i class="fas fa-file-alt me-2"></i>文档翻译
+                </a>
+                <a class="nav-link" href="/chat" th:href="@{/chat}" th:classappend="${#strings.equals(activePage, 'chat')} ? 'active' : ''">
+                    <i class="fas fa-comments me-2"></i>聊天翻译
+                </a>
+            </nav>
+        </div>
+
+        <div class="mb-4">
+            <h6 class="text-muted text-uppercase fw-bold mb-3">管理工具</h6>
+            <nav class="nav flex-column">
+                <a class="nav-link" href="/terminology" th:href="@{/terminology}" th:classappend="${#strings.equals(activePage, 'terminology')} ? 'active' : ''">
+                    <i class="fas fa-book me-2"></i>术语库
+                </a>
+                <a class="nav-link" href="/history" th:href="@{/history}" th:classappend="${#strings.equals(activePage, 'history')} ? 'active' : ''">
+                    <i class="fas fa-history me-2"></i>翻译历史
+                </a>
+                <a class="nav-link" href="/quality" th:href="@{/quality}" th:classappend="${#strings.equals(activePage, 'quality')} ? 'active' : ''">
+                    <i class="fas fa-star me-2"></i>质量评估
+                </a>
+                <a class="nav-link" href="/statistics" th:href="@{/statistics}" th:classappend="${#strings.equals(activePage, 'statistics')} ? 'active' : ''">
+                    <i class="fas fa-chart-bar me-2"></i>统计分析
+                </a>
+                <a class="nav-link" href="/moments" th:href="@{/moments}" th:classappend="${#strings.equals(activePage, 'moments')} ? 'active' : ''">
+                    <i class="fas fa-users me-2"></i>朋友圈
+                </a>
+            </nav>
+        </div>
+
+        <div class="mb-4">
+            <h6 class="text-muted text-uppercase fw-bold mb-3">系统设置</h6>
+            <nav class="nav flex-column">
+                <a class="nav-link" href="/settings" th:href="@{/settings}" th:classappend="${#strings.equals(activePage, 'settings')} ? 'active' : ''">
+                    <i class="fas fa-cog me-2"></i>系统设置
+                </a>
+                <a class="nav-link" href="/profile" th:href="@{/profile}" th:classappend="${#strings.equals(activePage, 'profile')} ? 'active' : ''">
+                    <i class="fas fa-user me-2"></i>个人资料
+                </a>
+                <a class="nav-link" href="/api-keys" th:href="@{/api-keys}" th:classappend="${#strings.equals(activePage, 'api-keys')} ? 'active' : ''">
+                    <i class="fas fa-key me-2"></i>API密钥
+                </a>
+            </nav>
+        </div>
+
+        <div class="mb-4">
+            <h6 class="text-muted text-uppercase fw-bold mb-3">帮助支持</h6>
+            <nav class="nav flex-column">
+                <a class="nav-link" href="/help" th:href="@{/help}" th:classappend="${#strings.equals(activePage, 'help')} ? 'active' : ''">
+                    <i class="fas fa-question-circle me-2"></i>使用帮助
+                </a>
+                <a class="nav-link" href="/api-docs" th:href="@{/api-docs}" th:classappend="${#strings.equals(activePage, 'api-docs')} ? 'active' : ''">
+                    <i class="fas fa-code me-2"></i>API文档
+                </a>
+                <a class="nav-link" href="/feedback" th:href="@{/feedback}" th:classappend="${#strings.equals(activePage, 'feedback')} ? 'active' : ''">
+                    <i class="fas fa-comment-dots me-2"></i>意见反馈
+                </a>
+            </nav>
+        </div>
+
+        <!-- 快速统计信息 -->
+        <div class="card border-0 bg-light">
+            <div class="card-body p-3">
+                <h6 class="card-title text-muted mb-3">今日统计</h6>
+                <div class="row g-2 text-center">
+                    <div class="col-6">
+                        <div class="small text-muted">翻译次数</div>
+                        <div class="fw-bold text-primary" th:text="${todayStats?.translationCount ?: 0}">0</div>
+                    </div>
+                    <div class="col-6">
+                        <div class="small text-muted">字符数</div>
+                        <div class="fw-bold text-success" th:text="${todayStats?.characterCount ?: 0}">0</div>
+                    </div>
+                    <div class="col-6">
+                        <div class="small text-muted">文档数</div>
+                        <div class="fw-bold text-info" th:text="${todayStats?.documentCount ?: 0}">0</div>
+                    </div>
+                    <div class="col-6">
+                        <div class="small text-muted">术语数</div>
+                        <div class="fw-bold text-warning" th:text="${todayStats?.terminologyCount ?: 0}">0</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 最近活动 -->
+        <div class="mt-4" th:if="${recentActivities != null and !recentActivities.isEmpty()}">
+            <h6 class="text-muted text-uppercase fw-bold mb-3">最近活动</h6>
+            <div class="list-group list-group-flush">
+                <div class="list-group-item border-0 px-0 py-2" th:each="activity : ${recentActivities}">
+                    <div class="d-flex align-items-center">
+                        <div class="flex-shrink-0 me-2">
+                            <i class="fas fa-circle text-primary" style="font-size: 0.5rem;"></i>
+                        </div>
+                        <div class="flex-grow-1">
+                            <div class="small fw-medium" th:text="${activity.description}">活动描述</div>
+                            <div class="text-muted" style="font-size: 0.75rem;" th:text="${activity.timeAgo}">时间</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 系统状态 -->
+        <div class="mt-4">
+            <h6 class="text-muted text-uppercase fw-bold mb-3">系统状态</h6>
+            <div class="small">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span>翻译引擎</span>
+                    <span class="badge bg-success">正常</span>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span>文档处理</span>
+                    <span class="badge bg-success">正常</span>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span>术语库</span>
+                    <span class="badge bg-success">正常</span>
+                </div>
+                <div class="d-flex justify-content-between align-items-center">
+                    <span>聊天服务</span>
+                    <span class="badge bg-success">正常</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
