@@ -6,6 +6,7 @@ import cn.net.susan.ai.translation.entity.TerminologyEntry;
 import cn.net.susan.ai.translation.entity.TranslationRecord;
 import cn.net.susan.ai.translation.repository.TerminologyEntryRepository;
 import cn.net.susan.ai.translation.repository.TranslationRecordRepository;
+import com.huaban.analysis.jieba.JiebaSegmenter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
@@ -34,6 +35,11 @@ public class RagService {
      * 可选获取 EmbeddingModel 的 Provider；如未配置，将回退至关键词检索。
      */
     private final ObjectProvider<EmbeddingModel> embeddingModelProvider;
+
+    /**
+     * jieba中文分词器（线程安全，可复用）
+     */
+    private final JiebaSegmenter jiebaSegmenter = new JiebaSegmenter();
 
     /**
      * 基于请求参数构建结构化 RAG 上下文。
@@ -96,23 +102,68 @@ public class RagService {
 
     /**
      * Extracts keywords from a text.
-     * 从文本中提取关键词
+     * 从文本中提取关键词，支持中文jieba分词和英文空格分词
      *
      * @param text the text to extract keywords from
      * @return the list of keywords
      */
     private List<String> extractKeywords(String text) {
-        if (!StringUtils.hasText(text)) return Collections.emptyList();
+        if (!StringUtils.hasText(text)) {
+            return Collections.emptyList();
+        }
+
+        // 根据文本语言选择分词策略
+        if (containsChinese(text)) {
+            // 中文：使用jieba分词
+            return extractKeywordsChinese(text);
+        } else {
+            // 英文：使用空格分词
+            return extractKeywordsEnglish(text);
+        }
+    }
+
+    /**
+     * 中文分词（jieba）
+     */
+    private List<String> extractKeywordsChinese(String text) {
+        List<String> words = jiebaSegmenter.sentenceProcess(text);
+        return words.stream()
+                .map(String::toLowerCase)
+                .filter(word -> word.length() >= 2)
+                .filter(word -> !isStopWord(word))
+                .distinct()
+                .limit(50)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 英文分词（空格）
+     */
+    private List<String> extractKeywordsEnglish(String text) {
         String normalized = text.replaceAll("[\\n\\r]+", " ")
                 .replaceAll("[^\\p{L}\\p{N}\\s]", " ")
                 .toLowerCase(Locale.ROOT);
         String[] parts = normalized.split("\\s+");
-        // 去重并过滤过短词
         return Arrays.stream(parts)
                 .filter(p -> p.length() >= 2)
+                .filter(p -> !isStopWord(p))
                 .distinct()
                 .limit(50)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * 停用词过滤
+     */
+    private boolean isStopWord(String word) {
+        Set<String> stopWords = Set.of(
+                "的", "了", "在", "是", "我", "有", "和", "就", "不", "人",
+                "都", "一", "一个", "上", "也", "很", "到", "说", "要", "去",
+                "你", "会", "着", "没有", "看", "好", "自己", "这", "那", "这些",
+                "the", "is", "at", "which", "on", "a", "an", "as", "are", "was",
+                "were", "been", "be", "have", "has", "had", "do", "does", "did"
+        );
+        return stopWords.contains(word);
     }
 
     /**
