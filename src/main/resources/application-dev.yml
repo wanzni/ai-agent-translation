@@ -1,4 +1,16 @@
 # AI服务配置
+spring:
+  ai:
+    dashscope:
+      api-key: sk-b6404b20b6f54ee3a5d1d9a7471ae50b
+      chat:
+        options:
+          model: qwen3-max
+          temperature: 0.7
+      embedding:
+        options:
+          model: text-embedding-v2  # DashScope Embedding模型
+
 ai:
   # 通义千问（DashScope）配置（用于文本翻译）
   dashscope:

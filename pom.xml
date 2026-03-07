@@ -22,7 +22,7 @@
     </properties>
 
     <dependencyManagement>
-  <dependencies>
+        <dependencies>
             <dependency>
                 <groupId>org.springframework.ai</groupId>
                 <artifactId>spring-ai-bom</artifactId>
@@ -92,6 +92,13 @@
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-core</artifactId>
             <version>1.0.0-M6</version>
+        </dependency>
+        
+        <!-- Spring AI Alibaba DashScope 支持（Embedding + Chat） -->
+        <dependency>
+            <groupId>com.alibaba.cloud.ai</groupId>
+            <artifactId>spring-ai-alibaba-starter</artifactId>
+            <version>1.0.0-M6.1</version>
         </dependency>
         
         <!-- 阿里云翻译SDK -->
@@ -231,6 +238,25 @@
             <version>1.0.2</version>
         </dependency>
     </dependencies>
+
+    <repositories>
+        <repository>
+            <id>spring-milestones</id>
+            <name>Spring Milestones</name>
+            <url>https://repo.spring.io/milestone</url>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </repository>
+        <repository>
+            <id>aliyun-spring-ai</id>
+            <name>Aliyun Spring AI</name>
+            <url>https://maven.aliyun.com/repository/spring-ai</url>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </repository>
+    </repositories>
     
     <build>
         <plugins>
