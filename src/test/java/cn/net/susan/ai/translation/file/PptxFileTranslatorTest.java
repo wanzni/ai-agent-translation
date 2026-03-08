@@ -43,6 +43,11 @@ public class PptxFileTranslatorTest {
             return out;
         }
 
+        @Override
+        public List<TranslationResponse> parallelBatchTranslate(List<TranslationRequest> requests) {
+            return batchTranslate(requests);
+        }
+
         // 以下方法在本测试中不使用，返回空或默认值
         @Override public cn.net.susan.ai.translation.dto.LanguageDetectionResponse detectLanguage(String text) { return null; }
         @Override public List<cn.net.susan.ai.translation.dto.SupportedLanguageResponse> getSupportedLanguages() { return List.of(); }

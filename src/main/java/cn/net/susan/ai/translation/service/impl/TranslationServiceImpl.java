@@ -27,6 +27,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.*;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
@@ -896,6 +897,95 @@ public class TranslationServiceImpl implements TranslationService {
             }
         }
 
+        return responses;
+    }
+
+    /**
+     * 并行翻译专用线程池
+     * - 核心线程数8，可同时翻译8个段落
+     * - 最大16线程，应对突发大量翻译
+     * - 有界队列1000，防止内存膨胀
+     * - CallerRunsPolicy：队列满时让调用线程执行，起到背压作用
+     */
+    private static final Executor parallelTranslateExecutor = new ThreadPoolExecutor(
+            8, 16, 60L, TimeUnit.SECONDS,
+            new LinkedBlockingQueue<>(1000),
+            new ThreadFactory() {
+                private int count = 0;
+                @Override
+                public Thread newThread(Runnable r) {
+                    Thread t = new Thread(r, "parallel-translate-" + count++);
+                    t.setDaemon(true);
+                    return t;
+                }
+            },
+            new ThreadPoolExecutor.CallerRunsPolicy()
+    );
+
+    /**
+     * 并行批量翻译：利用多线程并行翻译多个段落，突破大模型Token限制
+     * 
+     * 工作原理：
+     * 1. 将长文档分成多个小段落（如PDF每行一个段落）
+     * 2. 为每个段落创建一个异步任务，使用CompletableFuture.supplyAsync()
+     * 3. 所有任务并行执行（8线程）
+     * 4. 使用CompletableFuture.allOf()等待所有任务完成
+     * 5. 按原始顺序聚合结果
+     * 
+     * 性能提升：假设每段翻译2秒，10段并行只需 10÷8×2≈2.5秒（vs 串行20秒）
+     *
+     * @param requests 翻译请求列表（每个元素是一段文本）
+     * @return 翻译结果列表（顺序与输入一致）
+     * @throws Exception 翻译过程中发生的异常
+     */
+
+    public List<TranslationResponse> parallelBatchTranslate(List<TranslationRequest> requests) throws Exception {
+        if (requests == null || requests.isEmpty()) {
+            return Collections.emptyList();
+        }
+        
+        log.info("开始并行批量翻译，数量: {}", requests.size());
+        long startTime = System.currentTimeMillis();
+        
+        // 第一步：为每个翻译请求创建一个CompletableFuture异步任务
+        List<CompletableFuture<TranslationResponse>> futures = new ArrayList<>();
+        
+        for (TranslationRequest request : requests) {
+            // supplyAsync: 异步执行有返回值的任务
+            CompletableFuture<TranslationResponse> future = CompletableFuture.supplyAsync(() -> {
+                try {
+                    return translate(request);
+                } catch (Exception e) {
+                    log.error("并行翻译单个请求失败: {}", e.getMessage());
+                    // 失败时返回错误响应，而不是抛异常，保证其他任务继续执行
+                    return TranslationResponse.builder()
+                            .sourceText(request.getSourceText())
+                            .sourceLanguage(request.getSourceLanguage())
+                            .targetLanguage(request.getTargetLanguage())
+                            .status("ERROR")
+                            .errorMessage(e.getMessage())
+                            .build();
+                }
+            }, parallelTranslateExecutor);  // 使用专用线程池
+            futures.add(future);
+        }
+        
+        // 第二步：等待所有异步任务完成
+        // allOf: 当所有CompletableFuture都完成时，主任务完成
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+        
+        // 第三步：按原始顺序收集结果
+        List<TranslationResponse> responses = new ArrayList<>(futures.size());
+        for (CompletableFuture<TranslationResponse> future : futures) {
+            responses.add(future.join());  // 获取异步任务的结果
+        }
+        
+        // 第四步：记录性能日志
+        long duration = System.currentTimeMillis() - startTime;
+        log.info("并行批量翻译完成，数量: {}, 耗时: {}ms, 提速比: {:.2f}x", 
+                requests.size(), duration, 
+                requests.size() > 0 ? (double) duration / Math.max(1, requests.size()) : 1);
+        
         return responses;
     }
 

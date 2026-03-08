@@ -52,8 +52,8 @@ public class TxtFileTranslator implements DocumentFileTranslator {
             return sourceBytes;
         }
 
-        progressCallback.accept(50, "批量翻译中，共" + requests.size() + "段");
-        List<TranslationResponse> responses = translationService.batchTranslate(requests);
+        progressCallback.accept(50, "并行翻译中，共" + requests.size() + "段");
+            List<TranslationResponse> responses = translationService.parallelBatchTranslate(requests);
 
         // 写回译文，保留空行；对空结果降级为带目标语言标签的原文
         List<String> outLines = new ArrayList<>(total);

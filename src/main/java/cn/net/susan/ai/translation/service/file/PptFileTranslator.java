@@ -90,8 +90,8 @@ public class PptFileTranslator implements DocumentFileTranslator {
                         .build());
             }
 
-            progressCallback.accept(50, "批量翻译中，共" + requests.size() + "段");
-            List<TranslationResponse> responses = translationService.batchTranslate(requests);
+            progressCallback.accept(50, "并行翻译中，共" + requests.size() + "段");
+            List<TranslationResponse> responses = translationService.parallelBatchTranslate(requests);
 
             int applied = 0;
             for (int i = 0; i < slots.size(); i++) {

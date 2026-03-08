@@ -65,8 +65,8 @@ public class XlsFileTranslator implements DocumentFileTranslator {
                 }
             }
 
-            progressCallback.accept(55, "批量翻译中，共" + requests.size() + "个单元格");
-            List<TranslationResponse> responses = translationService.batchTranslate(requests);
+            progressCallback.accept(55, "并行翻译中，共" + requests.size() + "个单元格");
+            List<TranslationResponse> responses = translationService.parallelBatchTranslate(requests);
 
             int applied = 0;
             for (int i = 0; i < targetCells.size(); i++) {

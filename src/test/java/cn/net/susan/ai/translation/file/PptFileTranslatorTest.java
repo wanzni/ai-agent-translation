@@ -42,6 +42,11 @@ public class PptFileTranslatorTest {
             return out;
         }
 
+        @Override
+        public List<TranslationResponse> parallelBatchTranslate(List<TranslationRequest> requests) {
+            return batchTranslate(requests);
+        }
+
         @Override public cn.net.susan.ai.translation.dto.LanguageDetectionResponse detectLanguage(String text) { return null; }
         @Override public List<cn.net.susan.ai.translation.dto.SupportedLanguageResponse> getSupportedLanguages() { return List.of(); }
         @Override public org.springframework.data.domain.Page<cn.net.susan.ai.translation.entity.TranslationRecord> getTranslationHistory(Long userId, org.springframework.data.domain.Pageable pageable) { return org.springframework.data.domain.Page.empty(); }

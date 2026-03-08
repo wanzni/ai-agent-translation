@@ -70,6 +70,11 @@ public class PdfFileTranslatorTest {
             }
 
             @Override
+            public List<TranslationResponse> parallelBatchTranslate(List<TranslationRequest> requests) {
+                return batchTranslate(requests);
+            }
+
+            @Override
             public cn.net.susan.ai.translation.dto.LanguageDetectionResponse detectLanguage(String text) { 
                 return cn.net.susan.ai.translation.dto.LanguageDetectionResponse.builder()
                         .language("en").confidence(0.99).success(true).build();

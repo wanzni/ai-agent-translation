@@ -37,6 +37,15 @@ public interface TranslationService {
     List<TranslationResponse> batchTranslate(List<TranslationRequest> requests) throws Exception;
 
     /**
+     * 并行批量翻译多个文本，利用多线程提升翻译速度。
+     * 
+     * @param requests 翻译请求列表
+     * @return 翻译结果列表（顺序与输入一致）
+     * @throws Exception 翻译过程中发生的异常
+     */
+    List<TranslationResponse> parallelBatchTranslate(List<TranslationRequest> requests) throws Exception;
+
+    /**
      * 检测给定文本的语言。
      * 
      * @param text 待检测文本
