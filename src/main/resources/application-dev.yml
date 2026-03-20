@@ -2,23 +2,23 @@
 spring:
   ai:
     dashscope:
-      api-key: sk-b6404b20b6f54ee3a5d1d9a7471ae50b
+      api-key: sk-f1eb738f34de47309cc88aec7e68f5c3
       chat:
         options:
-          model: qwen3-max
+          model: qwen-plus
           temperature: 0.7
       embedding:
         options:
-          model: text-embedding-v2  # DashScope Embedding模型
+          model: text-embedding-v2
 
 ai:
   # 通义千问（DashScope）配置（用于文本翻译）
   dashscope:
     enabled: true
-    api-key: sk-b6404b20b6f54ee3a5d1d9a7471ae50b
+    api-key: sk-f1eb738f34de47309cc88aec7e68f5c3
     chat:
       options:
-        model: qwen3-max
+        model: qwen-plus
         temperature: 0.7
 
   # 阿里云翻译配置
