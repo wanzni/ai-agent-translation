@@ -8,3 +8,4 @@ target
 logs
 docs
 *.DS_Store
+/heap_dump.hprof

@@ -186,6 +186,44 @@
                 background: linear-gradient(90deg, #ef4444, #f59e0b, #10b981);
                 transition: width 0.5s ease;
             }
+
+            .agent-thinking-panel {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                border-radius: 0.75rem;
+                padding: 1rem;
+                margin-top: 1rem;
+                display: none;
+            }
+
+            .agent-thinking-panel.show {
+                display: block;
+            }
+
+            .agent-step {
+                background: rgba(255,255,255,0.1);
+                border-radius: 0.5rem;
+                padding: 0.75rem;
+                margin-bottom: 0.5rem;
+            }
+
+            .agent-step-title {
+                font-weight: 600;
+                font-size: 0.875rem;
+                margin-bottom: 0.25rem;
+            }
+
+            .agent-step-content {
+                font-size: 0.8rem;
+                opacity: 0.9;
+                max-height: 60px;
+                overflow-y: auto;
+            }
+
+            .agent-step.thought .agent-step-title { color: #a5b4fc; }
+            .agent-step.action .agent-step-title { color: #fcd34d; }
+            .agent-step.observation .agent-step-title { color: #6ee7b7; }
+            .agent-step.translating .agent-step-title { color: #f9a8d4; }
         </style>
     </th:block>
 </head>
@@ -288,8 +326,8 @@
                 <!-- 翻译区域 -->
                 <div class="row g-0">
                     <div class="col-md-6 position-relative">
-                        <textarea class="form-control text-area source-area" 
-                                  id="sourceText" 
+                        <textarea class="form-control text-area source-area"
+                                  id="sourceText"
                                   placeholder="请输入要翻译的文本..."
                                   maxlength="5000"></textarea>
                         <!-- 源文本复制/粘贴按钮 -->
@@ -306,8 +344,8 @@
                         </div>
                     </div>
                     <div class="col-md-6 position-relative">
-                        <textarea class="form-control text-area target-area" 
-                                  id="targetText" 
+                        <textarea class="form-control text-area target-area"
+                                  id="targetText"
                                   placeholder="翻译结果将显示在这里..."
                                   readonly></textarea>
                         <!-- 译文复制按钮 -->
@@ -320,6 +358,32 @@
                             <div class="spinner-border text-primary" role="status">
                                 <span class="visually-hidden">翻译中...</span>
                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Agent思考过程面板 -->
+                <div class="agent-thinking-panel" id="agentThinkingPanel">
+                    <div class="d-flex align-items-center mb-2">
+                        <i class="fas fa-brain me-2"></i>
+                        <strong>Agent 推理过程</strong>
+                    </div>
+                    <div id="agentStepsContainer">
+                        <div class="agent-step thought" id="stepThought" style="display:none;">
+                            <div class="agent-step-title"><i class="fas fa-lightbulb me-1"></i>Thought (思考)</div>
+                            <div class="agent-step-content" id="stepThoughtContent"></div>
+                        </div>
+                        <div class="agent-step action" id="stepAction" style="display:none;">
+                            <div class="agent-step-title"><i class="fas fa-cogs me-1"></i>Action (行动)</div>
+                            <div class="agent-step-content" id="stepActionContent"></div>
+                        </div>
+                        <div class="agent-step observation" id="stepObservation" style="display:none;">
+                            <div class="agent-step-title"><i class="fas fa-eye me-1"></i>Observation (观察)</div>
+                            <div class="agent-step-content" id="stepObservationContent"></div>
+                        </div>
+                        <div class="agent-step translating" id="stepTranslating" style="display:none;">
+                            <div class="agent-step-title"><i class="fas fa-pen me-1"></i>Translating (翻译中...)</div>
+                            <div class="agent-step-content" id="stepTranslatingContent"></div>
                         </div>
                     </div>
                 </div>
@@ -716,7 +780,7 @@
                     $(`#${tab}-tab`).removeClass('d-none');
                 });
 
-                // 执行翻译
+                // 执行翻译 (使用SSE流式输出)
                 function performTranslation() {
                     const sourceText = $('#sourceText').val().trim();
                     const sourceLanguage = $('#sourceLanguage').val();
@@ -726,9 +790,19 @@
                     const useTerminology = $('#useTerminology').is(':checked');
                     const qualityAssessment = $('#qualityAssessment').is(':checked');
 
-                    // 显示加载状态
+                    if (!sourceText) {
+                        Utils.showToast('请输入要翻译的文本', 'warning');
+                        return;
+                    }
+
+                    // 显示加载状态和思考面板
                     $('#loadingOverlay').removeClass('d-none');
                     $('#translateBtn').prop('disabled', true);
+                    $('#agentThinkingPanel').addClass('show');
+                    $('#targetText').val('');
+
+                    // 重置思考步骤
+                    resetAgentSteps();
 
                     // 构建请求数据
                     const u = JSON.parse(localStorage.getItem('authUser') || 'null');
@@ -743,38 +817,122 @@
                         userId: (u && u.id) ? String(u.id) : ''
                     };
 
-                    // 调用翻译API
-                    $.ajax({
-                        url: '/api/translation/translate',
-                        method: 'POST',
-                        contentType: 'application/json',
-                        headers: (function(){
-                            try {
-                                const token = (typeof getAuthToken === 'function') ? getAuthToken() : null;
-                                const h = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
-                                if (token) h['Authorization'] = 'Bearer ' + token;
-                                return h;
-                            } catch (e) {
-                                return { 'Content-Type': 'application/json', 'Accept': 'application/json' };
-                            }
-                        })(),
-                        data: JSON.stringify(requestData),
-                        success: function(response) {
-                            if (response.success) {
-                                displayTranslationResult(response.data);
-                                addToHistory(requestData, response.data);
-                            } else {
-                                Utils.showToast(response.message || '翻译失败', 'danger');
-                            }
-                        },
-                        error: function(xhr, status, error) {
-                            Utils.handleAjaxError(xhr, status, error);
-                        },
-                        complete: function() {
+                    // 获取token
+                    let token = null;
+                    try {
+                        token = (typeof getAuthToken === 'function') ? getAuthToken() : null;
+                    } catch (e) {}
+
+                    // 使用SSE流式翻译
+                    const eventSource = new EventSource('/api/translation/stream?' + new URLSearchParams({
+                        sourceText: requestData.sourceText,
+                        sourceLanguage: requestData.sourceLanguage,
+                        targetLanguage: requestData.targetLanguage,
+                        domain: requestData.translationType
+                    }));
+
+                    if (token) {
+                        eventSource.headers = { 'Authorization': 'Bearer ' + token };
+                    }
+
+                    eventSource.onmessage = function(event) {
+                        try {
+                            const data = JSON.parse(event.data);
+                            handleSSEEvent(data);
+                        } catch (e) {
+                            console.error('SSE解析失败:', e);
+                        }
+                    };
+
+                    eventSource.addEventListener('start', function(event) {
+                        // 开始
+                    });
+
+                    eventSource.addEventListener('thought', function(event) {
+                        try {
+                            const data = JSON.parse(event.data);
+                            showAgentStep('thought', data.content);
+                        } catch (e) {}
+                    });
+
+                    eventSource.addEventListener('action', function(event) {
+                        try {
+                            const data = JSON.parse(event.data);
+                            showAgentStep('action', data.content);
+                        } catch (e) {}
+                    });
+
+                    eventSource.addEventListener('observation', function(event) {
+                        try {
+                            const data = JSON.parse(event.data);
+                            showAgentStep('observation', data.content);
+                        } catch (e) {}
+                    });
+
+                    eventSource.addEventListener('translating', function(event) {
+                        try {
+                            const data = JSON.parse(event.data);
+                            showAgentStep('translating', '');
+                        } catch (e) {}
+                    });
+
+                    eventSource.addEventListener('delta', function(event) {
+                        try {
+                            const data = JSON.parse(event.data);
+                            const current = $('#targetText').val();
+                            $('#targetText').val(current + data.chunk);
+                        } catch (e) {}
+                    });
+
+                    eventSource.addEventListener('done', function(event) {
+                        try {
+                            const data = JSON.parse(event.data);
+                            $('#targetText').addClass('translation-result');
+                            $('#copyBtn, #saveBtn').prop('disabled', false);
+                            $('#speakTargetBtn').prop('disabled', false);
+                            $('#polishBtn').prop('disabled', false);
                             $('#loadingOverlay').addClass('d-none');
                             $('#translateBtn').prop('disabled', false);
-                        }
+
+                            // 保存到历史
+                            addToHistory(requestData, { translatedText: data.translatedText });
+
+                            setTimeout(() => {
+                                $('#agentThinkingPanel').removeClass('show');
+                            }, 2000);
+                        } catch (e) {}
+                        eventSource.close();
                     });
+
+                    eventSource.onerror = function(event) {
+                        console.error('SSE错误:', event);
+                        $('#loadingOverlay').addClass('d-none');
+                        $('#translateBtn').prop('disabled', false);
+                        Utils.showToast('翻译失败，请重试', 'danger');
+                        eventSource.close();
+                    };
+                }
+
+                function resetAgentSteps() {
+                    $('#stepThought').hide();
+                    $('#stepAction').hide();
+                    $('#stepObservation').hide();
+                    $('#stepTranslating').hide();
+                    $('#stepThoughtContent').text('');
+                    $('#stepActionContent').text('');
+                    $('#stepObservationContent').text('');
+                    $('#stepTranslatingContent').text('');
+                }
+
+                function showAgentStep(step, content) {
+                    const stepId = 'step' + step.charAt(0).toUpperCase() + step.slice(1);
+                    $('#' + stepId).show();
+                    if (step === 'translating') {
+                        $('#' + stepId + 'Content').text('翻译进行中...');
+                    } else {
+                        const current = $('#' + stepId + 'Content').text();
+                        $('#' + stepId + 'Content').text(current + content);
+                    }
                 }
 
                 // 显示翻译结果

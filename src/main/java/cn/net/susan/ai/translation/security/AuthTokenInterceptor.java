@@ -27,7 +27,7 @@ public class AuthTokenInterceptor implements HandlerInterceptor {
         // Allow static and auth endpoints
         if (uri.startsWith("/static/") || uri.startsWith("/css/") || uri.startsWith("/js/") ||
                 uri.startsWith("/images/") || uri.startsWith("/login") || uri.startsWith("/api/auth/") ||
-                uri.startsWith("/api/agent/")) {
+                uri.startsWith("/api/agent/") || uri.startsWith("/api/translation/stream")) {
             return true;
         }
 
