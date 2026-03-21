@@ -2,6 +2,7 @@ package cn.net.susan.ai.translation.service.impl.agent;
 
 import cn.net.susan.ai.translation.dto.agent.AgentTaskCreateRequest;
 import cn.net.susan.ai.translation.dto.agent.AgentTaskResponse;
+import cn.net.susan.ai.translation.dto.agent.AgentTaskStepResponse;
 import cn.net.susan.ai.translation.entity.AgentTask;
 import cn.net.susan.ai.translation.entity.AgentTaskStep;
 import cn.net.susan.ai.translation.enums.AgentStepStatusEnum;
@@ -13,11 +14,13 @@ import cn.net.susan.ai.translation.repository.AgentTaskRepository;
 import cn.net.susan.ai.translation.repository.AgentTaskStepRepository;
 import cn.net.susan.ai.translation.security.UserContext;
 import cn.net.susan.ai.translation.service.agent.AgentTaskService;
+import cn.net.susan.ai.translation.service.agent.AgentWorkflowService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -26,6 +29,7 @@ public class AgentTaskServiceImpl implements AgentTaskService {
 
     private final AgentTaskRepository agentTaskRepository;
     private final AgentTaskStepRepository agentTaskStepRepository;
+    private final AgentWorkflowService agentWorkflowService;
 
     @Override
     @Transactional
@@ -62,6 +66,7 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                 .build();
         agentTaskStepRepository.save(createdStep);
 
+        agentWorkflowService.submitTextTask(savedTask.getId());
         return toResponse(savedTask);
     }
 
@@ -71,6 +76,18 @@ public class AgentTaskServiceImpl implements AgentTaskService {
         AgentTask task = agentTaskRepository.findById(taskId)
                 .orElseThrow(() -> new ResourceNotFoundException("Agent task not found: " + taskId));
         return toResponse(task);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<AgentTaskStepResponse> getTaskSteps(Long taskId) {
+        if (!agentTaskRepository.existsById(taskId)) {
+            throw new ResourceNotFoundException("Agent task not found: " + taskId);
+        }
+        return agentTaskStepRepository.findByTaskIdOrderByStepNoAsc(taskId)
+                .stream()
+                .map(this::toStepResponse)
+                .toList();
     }
 
     private AgentTaskResponse toResponse(AgentTask task) {
@@ -98,6 +115,24 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                 .completedAt(task.getCompletedAt())
                 .createdAt(task.getCreatedAt())
                 .updatedAt(task.getUpdatedAt())
+                .build();
+    }
+
+    private AgentTaskStepResponse toStepResponse(AgentTaskStep step) {
+        return AgentTaskStepResponse.builder()
+                .id(step.getId())
+                .taskId(step.getTaskId())
+                .stepNo(step.getStepNo())
+                .stepType(step.getStepType())
+                .stepName(step.getStepName())
+                .toolName(step.getToolName())
+                .modelName(step.getModelName())
+                .inputJson(step.getInputJson())
+                .outputJson(step.getOutputJson())
+                .status(step.getStatus())
+                .durationMs(step.getDurationMs())
+                .errorMessage(step.getErrorMessage())
+                .createdAt(step.getCreatedAt())
                 .build();
     }
 

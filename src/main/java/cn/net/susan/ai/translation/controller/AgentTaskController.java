@@ -2,12 +2,15 @@ package cn.net.susan.ai.translation.controller;
 
 import cn.net.susan.ai.translation.dto.agent.AgentTaskCreateRequest;
 import cn.net.susan.ai.translation.dto.agent.AgentTaskResponse;
+import cn.net.susan.ai.translation.dto.agent.AgentTaskStepResponse;
 import cn.net.susan.ai.translation.service.agent.AgentTaskService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @Slf4j
 @RestController
@@ -28,5 +31,11 @@ public class AgentTaskController {
     public AgentTaskResponse getTask(@PathVariable Long taskId) {
         log.info("Get agent task detail: {}", taskId);
         return agentTaskService.getTask(taskId);
+    }
+
+    @GetMapping("/{taskId}/steps")
+    public List<AgentTaskStepResponse> getTaskSteps(@PathVariable Long taskId) {
+        log.info("Get agent task steps: {}", taskId);
+        return agentTaskService.getTaskSteps(taskId);
     }
 }
