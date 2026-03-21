@@ -177,8 +177,8 @@ app:
 logging:
   level:
     com.ai.translation: DEBUG
-    cn.net.susan.ai.translation: DEBUG
-    cn.net.susan.ai.translation.service.impl.DocumentTranslationServiceImpl: DEBUG
+    cn.net.wanzni.ai.translation: DEBUG
+    cn.net.wanzni.ai.translation.service.impl.DocumentTranslationServiceImpl: DEBUG
     org.springframework.ai: DEBUG
     org.springframework.data.elasticsearch: DEBUG
     org.apache.pdfbox.pdmodel.font.FileSystemFontProvider: ERROR
