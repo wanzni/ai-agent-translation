@@ -9,3 +9,5 @@ logs
 docs
 *.DS_Store
 /heap_dump.hprof
+application-dev.yml
+application.yml
