@@ -93,6 +93,38 @@
                 margin-top: 1rem;
             }
 
+            .home-workflow-panel {
+                margin-top: 1rem;
+                background: linear-gradient(135deg, #1d4ed8, #2563eb);
+                color: white;
+                border-radius: 10px;
+                padding: 1rem;
+            }
+
+            .home-workflow-meta {
+                font-size: 0.8rem;
+                color: rgba(255, 255, 255, 0.8);
+                margin-bottom: 0.75rem;
+            }
+
+            .home-workflow-step {
+                background: rgba(255, 255, 255, 0.12);
+                border-radius: 8px;
+                padding: 0.75rem;
+                margin-bottom: 0.5rem;
+            }
+
+            .home-workflow-step-title {
+                font-weight: 600;
+                margin-bottom: 0.25rem;
+            }
+
+            .home-workflow-step-status {
+                font-size: 0.75rem;
+                color: rgba(255, 255, 255, 0.85);
+                margin-top: 0.25rem;
+            }
+
             .btn-primary {
                 background: linear-gradient(135deg, var(--primary-color), #3b82f6);
                 border: none;
@@ -509,6 +541,19 @@
                     <strong>点数余额:</strong> <span id="homePointsBalance">--</span>
                                 </div>
                                 <p class="mb-0" id="translationResult">Hello, welcome to the Intelligent Translation Assistant! This is a multilingual translation system based on Spring AI, supporting text translation, document translation, and real-time conversation translation.</p>
+                            </div>
+                            <div class="home-workflow-panel" id="homeWorkflowPanel">
+                                <div class="d-flex align-items-center justify-content-between mb-2">
+                                    <div class="fw-bold"><i class="fas fa-diagram-project me-2"></i>Workflow Timeline</div>
+                                    <span class="badge bg-light text-dark" id="homeWorkflowStatus">WAITING</span>
+                                </div>
+                                <div class="home-workflow-meta" id="homeWorkflowMeta">等待任务开始...</div>
+                                <div id="homeWorkflowSteps">
+                                    <div class="home-workflow-step">
+                                        <div class="home-workflow-step-title">Workflow</div>
+                                        <div>任务开始后，这里会显示真实步骤流。</div>
+                                    </div>
+                                </div>
                             </div>
                             <div class="mt-3">
                                 <button class="btn btn-outline-primary me-2" onclick="readAloudTranslation()">
@@ -2044,6 +2089,311 @@
                     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
                 })[s]);
             }
+
+            let homeTaskEventSource = null;
+            let homeTypewriterTimer = null;
+            let homeTypewriterTargetText = null;
+            let homeTaskResult = null;
+            let homeTaskRequest = null;
+            let homeTaskTerminated = false;
+
+            const homeWorkflowStepLabels = {
+                CREATED: '任务已创建',
+                PLAN: '任务规划中',
+                RETRIEVE_TERMINOLOGY: '检索术语与上下文',
+                TRANSLATE: '执行翻译',
+                QUALITY_CHECK: '质量检查',
+                FINALIZE: '结果收口'
+            };
+
+            const homeTaskStatusLabels = {
+                PENDING: '待执行',
+                RUNNING: '执行中',
+                COMPLETED: '已完成',
+                FAILED: '失败',
+                REVIEW_REQUIRED: '待复核',
+                CANCELLED: '已取消'
+            };
+
+            function homeSafeJsonParse(raw) {
+                if (!raw) return null;
+                if (typeof raw === 'object') return raw;
+                try {
+                    return JSON.parse(raw);
+                } catch (e) {
+                    return null;
+                }
+            }
+
+            function normalizeHomeEngineCode(engine) {
+                if (!engine) return null;
+                const normalized = String(engine).trim().toUpperCase();
+                if (normalized === 'ALIYUN') return 'ALIBABA_CLOUD';
+                return normalized;
+            }
+
+            function homeStopTypewriter() {
+                if (homeTypewriterTimer) {
+                    clearTimeout(homeTypewriterTimer);
+                    homeTypewriterTimer = null;
+                }
+                homeTypewriterTargetText = null;
+            }
+
+            function homeCloseTaskStream() {
+                if (homeTaskEventSource) {
+                    homeTaskEventSource.close();
+                    homeTaskEventSource = null;
+                }
+            }
+
+            function resetHomeWorkflowPanel() {
+                const stepsEl = document.getElementById('homeWorkflowSteps');
+                const statusEl = document.getElementById('homeWorkflowStatus');
+                const metaEl = document.getElementById('homeWorkflowMeta');
+                if (stepsEl) {
+                    stepsEl.innerHTML = `
+                        <div class="home-workflow-step">
+                            <div class="home-workflow-step-title">Workflow</div>
+                            <div>任务开始后，这里会显示真实步骤流。</div>
+                        </div>
+                    `;
+                }
+                if (statusEl) statusEl.textContent = 'WAITING';
+                if (metaEl) {
+                    metaEl.textContent = '等待任务开始...';
+                    metaEl.dataset.baseMeta = '';
+                }
+            }
+
+            function updateHomeWorkflowMeta(taskInfo) {
+                const metaEl = document.getElementById('homeWorkflowMeta');
+                if (!metaEl || !taskInfo) return;
+                const parts = [];
+                if (taskInfo.taskNo) parts.push(`Task ${taskInfo.taskNo}`);
+                if (taskInfo.traceId) parts.push(`Trace ${taskInfo.traceId}`);
+                const baseMeta = parts.join(' | ');
+                metaEl.dataset.baseMeta = baseMeta;
+                metaEl.textContent = baseMeta || '任务已创建';
+            }
+
+            function updateHomeWorkflowStatus(taskEvent) {
+                if (!taskEvent) return;
+                const statusEl = document.getElementById('homeWorkflowStatus');
+                const metaEl = document.getElementById('homeWorkflowMeta');
+                if (statusEl) {
+                    statusEl.textContent = homeTaskStatusLabels[taskEvent.taskStatus] || (taskEvent.taskStatus || 'UNKNOWN');
+                }
+                if (metaEl) {
+                    const parts = [];
+                    if (metaEl.dataset.baseMeta) parts.push(metaEl.dataset.baseMeta);
+                    if (taskEvent.currentStep) {
+                        parts.push(`当前阶段: ${homeWorkflowStepLabels[taskEvent.currentStep] || taskEvent.currentStep}`);
+                    }
+                    if (taskEvent.finalQualityScore !== undefined && taskEvent.finalQualityScore !== null) {
+                        parts.push(`质量分: ${taskEvent.finalQualityScore}`);
+                    }
+                    if (taskEvent.needHumanReview) {
+                        parts.push('需要人工复核');
+                    }
+                    if (taskEvent.reviewReasonCode) {
+                        parts.push(`复核原因: ${taskEvent.reviewReasonCode}`);
+                    }
+                    if (taskEvent.errorMessage) {
+                        parts.push(`错误: ${taskEvent.errorMessage}`);
+                    }
+                    metaEl.textContent = parts.join(' | ') || '任务执行中';
+                }
+            }
+
+            function buildHomeWorkflowStepSummary(step) {
+                const parts = [];
+                const output = homeSafeJsonParse(step.outputJson);
+                if (step.toolName) parts.push(`工具: ${step.toolName}`);
+                if (step.modelName) parts.push(`模型: ${step.modelName}`);
+                if (step.durationMs !== undefined && step.durationMs !== null) parts.push(`耗时: ${step.durationMs}ms`);
+                if (output) {
+                    if (output.glossaryHitCount !== undefined) parts.push(`术语命中: ${output.glossaryHitCount}`);
+                    if (output.tmHitCount !== undefined) parts.push(`TM 命中: ${output.tmHitCount}`);
+                    if (output.historyFallbackCount !== undefined) parts.push(`History fallback: ${output.historyFallbackCount}`);
+                    if (output.overallScore !== undefined) parts.push(`总分: ${output.overallScore}`);
+                    if (output.tmEligible !== undefined) parts.push(`TM gate: ${output.tmEligible ? 'PASS' : 'REJECT'}`);
+                }
+                if (step.errorMessage) parts.push(`错误: ${step.errorMessage}`);
+                return parts.join(' | ') || '步骤已记录';
+            }
+
+            function renderHomeWorkflowStep(step) {
+                if (!step) return;
+                const stepsEl = document.getElementById('homeWorkflowSteps');
+                if (!stepsEl) return;
+                const stepId = `homeWorkflowStep${step.stepNo || 'x'}`;
+                const title = homeWorkflowStepLabels[step.stepType] || step.stepName || step.stepType || 'Workflow Step';
+                const html = `
+                    <div class="home-workflow-step" id="${stepId}">
+                        <div class="home-workflow-step-title">${escapeHTML(title)}</div>
+                        <div>${escapeHTML(buildHomeWorkflowStepSummary(step))}</div>
+                        <div class="home-workflow-step-status">Status: ${escapeHTML(step.status || 'UNKNOWN')}</div>
+                    </div>
+                `;
+                const existing = document.getElementById(stepId);
+                if (existing) {
+                    existing.outerHTML = html;
+                } else {
+                    if (stepsEl.children.length === 1 && !stepsEl.querySelector('[id^="homeWorkflowStep"]')) {
+                        stepsEl.innerHTML = '';
+                    }
+                    stepsEl.insertAdjacentHTML('beforeend', html);
+                }
+            }
+
+            function renderHomeWorkflowSnapshot(snapshot) {
+                resetHomeWorkflowPanel();
+                updateHomeWorkflowMeta(snapshot);
+                updateHomeWorkflowStatus(snapshot);
+                if (snapshot.steps && snapshot.steps.length) {
+                    snapshot.steps.forEach(renderHomeWorkflowStep);
+                }
+            }
+
+            function startHomeTypewriter(text, onComplete) {
+                homeStopTypewriter();
+                const resultElement = document.getElementById('translationResult');
+                const fullText = text || '';
+                homeTypewriterTargetText = fullText;
+                if (resultElement) resultElement.textContent = '';
+                if (!fullText) {
+                    if (typeof onComplete === 'function') onComplete();
+                    return;
+                }
+                const chunkSize = fullText.length > 120 ? 6 : 3;
+                const delay = fullText.length > 120 ? 15 : 25;
+                let index = 0;
+
+                function tick() {
+                    index = Math.min(fullText.length, index + chunkSize);
+                    if (resultElement) resultElement.textContent = fullText.substring(0, index);
+                    if (index >= fullText.length) {
+                        homeTypewriterTimer = null;
+                        if (typeof onComplete === 'function') onComplete();
+                        return;
+                    }
+                    homeTypewriterTimer = setTimeout(tick, delay);
+                }
+
+                tick();
+            }
+
+            function tryStartHomePreviewFromStep(step) {
+                if (!step || step.stepType !== 'TRANSLATE' || homeTaskResult) return;
+                const output = homeSafeJsonParse(step.outputJson);
+                if (!output || !output.translatedText) return;
+                if (homeTypewriterTargetText === output.translatedText) return;
+                startHomeTypewriter(output.translatedText);
+            }
+
+            function applyHomeTaskResult(result, qualityBadge, translateBtn, originalText) {
+                homeTaskResult = result;
+                const text = result && result.finalResponse ? String(result.finalResponse) : '';
+                const resultElement = document.getElementById('translationResult');
+                if (!text) return;
+                if (homeTypewriterTimer && homeTypewriterTargetText === text) {
+                    return;
+                }
+                if (resultElement && resultElement.textContent === text) {
+                    finalizeHomeTaskResult(result, qualityBadge, translateBtn, originalText);
+                    return;
+                }
+                startHomeTypewriter(text, function() {
+                    finalizeHomeTaskResult(result, qualityBadge, translateBtn, originalText);
+                });
+            }
+
+            function finalizeHomeTaskResult(result, qualityBadge, translateBtn, originalText) {
+                const resultElement = document.getElementById('translationResult');
+                const homePolishBtn = document.getElementById('homePolishBtn');
+                if (qualityBadge && result && result.finalQualityScore !== undefined && result.finalQualityScore !== null) {
+                    qualityBadge.textContent = `质量评分: ${Math.round(result.finalQualityScore)}%`;
+                    qualityBadge.className = 'badge ms-auto';
+                    if (result.finalQualityScore >= 90) {
+                        qualityBadge.classList.add('bg-success');
+                    } else if (result.finalQualityScore >= 80) {
+                        qualityBadge.classList.add('bg-info');
+                    } else if (result.finalQualityScore >= 70) {
+                        qualityBadge.classList.add('bg-warning');
+                    } else {
+                        qualityBadge.classList.add('bg-danger');
+                    }
+                }
+                if (homePolishBtn) {
+                    const hasText = !!(resultElement && resultElement.textContent && resultElement.textContent.trim().length > 0);
+                    homePolishBtn.disabled = !hasText;
+                }
+                if (translateBtn) {
+                    translateBtn.innerHTML = originalText;
+                    translateBtn.disabled = false;
+                }
+            }
+
+            function subscribeHomeTaskEvents(task, qualityBadge, translateBtn, originalText) {
+                homeCloseTaskStream();
+                homeTaskEventSource = new EventSource(`/api/agent/tasks/${task.id}/events`);
+
+                homeTaskEventSource.addEventListener('connected', function(event) {
+                    const data = homeSafeJsonParse(event.data);
+                    updateHomeWorkflowMeta(data);
+                });
+
+                homeTaskEventSource.addEventListener('snapshot', function(event) {
+                    const data = homeSafeJsonParse(event.data);
+                    renderHomeWorkflowSnapshot(data);
+                });
+
+                homeTaskEventSource.addEventListener('task', function(event) {
+                    const data = homeSafeJsonParse(event.data);
+                    updateHomeWorkflowStatus(data);
+                });
+
+                homeTaskEventSource.addEventListener('step', function(event) {
+                    const data = homeSafeJsonParse(event.data);
+                    renderHomeWorkflowStep(data);
+                    tryStartHomePreviewFromStep(data);
+                });
+
+                homeTaskEventSource.addEventListener('result', function(event) {
+                    const data = homeSafeJsonParse(event.data);
+                    applyHomeTaskResult(data, qualityBadge, translateBtn, originalText);
+                });
+
+                homeTaskEventSource.addEventListener('done', function(event) {
+                    const data = homeSafeJsonParse(event.data);
+                    homeTaskTerminated = true;
+                    homeCloseTaskStream();
+                    if (data && data.terminalStatus) {
+                        updateHomeWorkflowStatus({ taskStatus: data.terminalStatus });
+                    }
+                    if (!data || (data.terminalStatus !== 'COMPLETED' && data.terminalStatus !== 'REVIEW_REQUIRED')) {
+                        if (translateBtn) {
+                            translateBtn.innerHTML = originalText;
+                            translateBtn.disabled = false;
+                        }
+                        showNotification('翻译任务失败，请稍后重试', 'error');
+                    } else {
+                        showNotification('翻译完成！', 'success');
+                    }
+                });
+
+                homeTaskEventSource.onerror = function(event) {
+                    if (homeTaskTerminated) return;
+                    console.error('首页 Workflow SSE 错误:', event);
+                    homeCloseTaskStream();
+                    if (translateBtn) {
+                        translateBtn.innerHTML = originalText;
+                        translateBtn.disabled = false;
+                    }
+                    showNotification('实时任务流连接失败，请重试', 'error');
+                };
+            }
             // 滚动到在线翻译区域
             function scrollToDemo() {
                 const demoSection = document.querySelector('#translate');
@@ -2055,7 +2405,7 @@
                 }
             }
 
-            // 翻译文本功能 - 连接阿里云翻译API
+            // 翻译文本功能 - 首页也切到真实 task workflow SSE
             function translateText() {
                 const sourceTextArea = document.querySelector('#text-translation .translation-area');
                 const sourceLanguageSelect = document.querySelector('#text-translation .col-md-6:first-child .language-selector');
@@ -2097,29 +2447,26 @@
                 const originalText = translateBtn.innerHTML;
                 translateBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>翻译中...';
                 translateBtn.disabled = true;
+                homeCloseTaskStream();
+                homeStopTypewriter();
+                homeTaskResult = null;
+                homeTaskTerminated = false;
+                resetHomeWorkflowPanel();
+                resultElement.textContent = '';
                 
-                // 构建翻译请求
                 const authUser = JSON.parse(localStorage.getItem('authUser') || 'null');
+                const engineSelect = document.getElementById('homeTranslationEngine');
                 const translationRequest = {
                     sourceText: sourceText,
-                    // 后端允许 'auto' 进行自动检测，避免发送 null 触发校验错误
                     sourceLanguage: sourceLanguage,
                     targetLanguage: targetLanguage,
-                translationEngine: 'QWEN',
-                    engine: 'QWEN',
-                    translationType: 'STANDARD',
-                    userId: authUser && authUser.id ? String(authUser.id) : '',
-                    // 开启术语库应用（后端将构建术语上下文并做后处理）
-                    useTerminology: true,
-                    needQualityAssessment: true,
-                    clientInfo: {
-                        userAgent: navigator.userAgent,
-                        platform: 'web'
-                    }
+                    domain: 'general',
+                    translationEngine: normalizeHomeEngineCode(engineSelect ? engineSelect.value : 'QWEN'),
+                    userId: authUser && authUser.id ? Number(authUser.id) : null
                 };
+                homeTaskRequest = translationRequest;
                 
-                // 使用authorizedFetch并设置authPromptOn401，确保401时弹出登录窗口
-                authorizedFetch('/api/translation/translate', {
+                authorizedFetch('/api/agent/tasks/text', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -2140,76 +2487,14 @@
                 })
                 .then(data => {
                     if (!data) {
-                        throw new Error('翻译接口返回为空');
+                        throw new Error('任务创建接口返回为空');
                     }
-
-                    // 兼容不同后端包装结构：
-                    // 1) { success, data: { translatedText, ... } }
-                    // 2) { code, data: { data: { translatedText, ... }, success } }
-                    const payload = (data.data && data.data.data) ? data.data.data : (data.data || data);
-
-                    const text = (payload && typeof payload.translatedText === 'string') ? payload.translatedText.trim() : '';
-
-                    // 优先显示译文；若无译文则显示错误或友好提示，不清空为纯空白
-                    if (text) {
-                        resultElement.textContent = text;
-                        showNotification('翻译完成！', 'success');
-                    } else if (payload && payload.status === 'ERROR') {
-                        const msg = payload.errorMessage || '翻译失败';
-                        resultElement.textContent = '翻译失败：' + msg;
-                        if (qualityBadge) {
-                            qualityBadge.textContent = '翻译失败';
-                            qualityBadge.className = 'badge bg-danger ms-auto';
-                        }
-                    } else {
-                        resultElement.textContent = '未获取到译文，请稍后重试或更换引擎';
+                    const task = (data.data && data.data.data) ? data.data.data : (data.data || data);
+                    if (!task || !task.id) {
+                        throw new Error('任务创建失败');
                     }
-
-                    const homePolishBtn = document.getElementById('homePolishBtn');
-                    if (homePolishBtn) {
-                        homePolishBtn.disabled = !((resultElement.textContent || '').trim().length > 0 && !resultElement.textContent.startsWith('翻译失败'));
-                    }
-
-                    // 更新质量评分
-                    if (payload && typeof payload.qualityScore === 'number' && qualityBadge) {
-                        qualityBadge.textContent = `质量评分: ${Math.round(payload.qualityScore)}%`;
-                        qualityBadge.className = 'badge ms-auto';
-                        if (payload.qualityScore >= 90) {
-                            qualityBadge.classList.add('bg-success');
-                        } else if (payload.qualityScore >= 80) {
-                            qualityBadge.classList.add('bg-info');
-                        } else if (payload.qualityScore >= 70) {
-                            qualityBadge.classList.add('bg-warning');
-                        } else {
-                            qualityBadge.classList.add('bg-danger');
-                        }
-                    }
-
-                    // 显示检测到的源语言（如果是自动检测）
-                    if (sourceLanguage === 'auto' && payload && payload.detectedLanguage) {
-                        const detectedLangText = getLanguageName(payload.detectedLanguage);
-                        if (detectedLangText) {
-                            const detectedInfo = document.createElement('small');
-                            detectedInfo.className = 'text-muted d-block mt-1';
-                            detectedInfo.textContent = `检测到源语言: ${detectedLangText}`;
-                            const existingInfo = resultElement.parentNode.querySelector('.detected-language');
-                            if (existingInfo) existingInfo.remove();
-                            detectedInfo.className += ' detected-language';
-                            resultElement.parentNode.appendChild(detectedInfo);
-                        }
-                    }
-
-                    // 更新点数消耗与余额（总是显示，但缺省为 --）
-                    try {
-                        const usedPointsEl = document.getElementById('homeUsedPoints');
-                        const balanceEl = document.getElementById('homePointsBalance');
-                        const infoWrap = document.getElementById('homePointsInfo');
-                        if (infoWrap) infoWrap.classList.remove('d-none');
-                        const used = (payload && payload.usedPoints);
-                        const bal = (payload && payload.pointsBalance);
-                        if (usedPointsEl) usedPointsEl.textContent = (used !== undefined && used !== null) ? String(used) : '--';
-                        if (balanceEl) balanceEl.textContent = (bal !== undefined && bal !== null) ? String(bal) : '--';
-                    } catch (_) {}
+                    updateHomeWorkflowMeta(task);
+                    subscribeHomeTaskEvents(task, qualityBadge, translateBtn, originalText);
                 })
                 .catch(error => {
                     console.error('翻译错误:', error);
@@ -2229,15 +2514,7 @@
                     } catch (_) {}
                     showNotification('翻译失败: ' + error.message, 'error');
                 })
-                .finally(() => {
-                    translateBtn.innerHTML = originalText;
-                    translateBtn.disabled = false;
-                    const homePolishBtn = document.getElementById('homePolishBtn');
-                    if (homePolishBtn) {
-                        const hasText = !!(resultElement && resultElement.textContent && resultElement.textContent.trim().length > 0);
-                        homePolishBtn.disabled = !hasText;
-                    }
-                });
+                .finally(() => {});
             }
 
             // LLM 后编辑：依据术语库与风格 Prompt 对 MT 结果二次润色

@@ -3,8 +3,10 @@ package cn.net.wanzni.ai.translation.service.impl.agent;
 import cn.net.wanzni.ai.translation.dto.agent.AgentTaskCreateRequest;
 import cn.net.wanzni.ai.translation.dto.agent.AgentTaskResponse;
 import cn.net.wanzni.ai.translation.dto.agent.AgentTaskStepResponse;
+import cn.net.wanzni.ai.translation.dto.agent.AgentTaskTimelineResponse;
 import cn.net.wanzni.ai.translation.entity.AgentTask;
 import cn.net.wanzni.ai.translation.entity.AgentTaskStep;
+import cn.net.wanzni.ai.translation.entity.ReviewTask;
 import cn.net.wanzni.ai.translation.enums.AgentStepStatusEnum;
 import cn.net.wanzni.ai.translation.enums.AgentStepTypeEnum;
 import cn.net.wanzni.ai.translation.enums.AgentTaskStatusEnum;
@@ -12,6 +14,7 @@ import cn.net.wanzni.ai.translation.enums.AgentTaskTypeEnum;
 import cn.net.wanzni.ai.translation.exception.ResourceNotFoundException;
 import cn.net.wanzni.ai.translation.repository.AgentTaskRepository;
 import cn.net.wanzni.ai.translation.repository.AgentTaskStepRepository;
+import cn.net.wanzni.ai.translation.repository.ReviewTaskRepository;
 import cn.net.wanzni.ai.translation.security.UserContext;
 import cn.net.wanzni.ai.translation.service.agent.AgentTaskService;
 import cn.net.wanzni.ai.translation.service.agent.AgentWorkflowService;
@@ -29,6 +32,7 @@ public class AgentTaskServiceImpl implements AgentTaskService {
 
     private final AgentTaskRepository agentTaskRepository;
     private final AgentTaskStepRepository agentTaskStepRepository;
+    private final ReviewTaskRepository reviewTaskRepository;
     private final AgentWorkflowService agentWorkflowService;
 
     @Override
@@ -45,6 +49,7 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                 .sourceLanguage(request.getSourceLanguage())
                 .targetLanguage(request.getTargetLanguage())
                 .domain(request.getDomain())
+                .selectedModel(normalizeTranslationEngine(request.getTranslationEngine()))
                 .sourceText(request.getSourceText())
                 .status(AgentTaskStatusEnum.PENDING)
                 .currentStep(AgentStepTypeEnum.CREATED.name())
@@ -88,6 +93,30 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                 .stream()
                 .map(this::toStepResponse)
                 .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AgentTaskTimelineResponse getTaskTimeline(Long taskId) {
+        AgentTask task = agentTaskRepository.findById(taskId)
+                .orElseThrow(() -> new ResourceNotFoundException("Agent task not found: " + taskId));
+        List<AgentTaskStepResponse> steps = agentTaskStepRepository.findByTaskIdOrderByStepNoAsc(taskId)
+                .stream()
+                .map(this::toStepResponse)
+                .toList();
+        ReviewTask reviewTask = reviewTaskRepository.findFirstByAgentTaskIdOrderByCreatedAtDesc(taskId).orElse(null);
+        return AgentTaskTimelineResponse.builder()
+                .taskId(task.getId())
+                .taskNo(task.getTaskNo())
+                .traceId(task.getTraceId())
+                .taskStatus(task.getStatus())
+                .currentStep(task.getCurrentStep())
+                .needHumanReview(task.getNeedHumanReview())
+                .reviewTaskId(reviewTask != null ? reviewTask.getId() : null)
+                .reviewStatus(reviewTask != null ? reviewTask.getReviewStatus() : null)
+                .reviewReasonCode(reviewTask != null ? reviewTask.getReasonCode() : null)
+                .steps(steps)
+                .build();
     }
 
     private AgentTaskResponse toResponse(AgentTask task) {
@@ -152,6 +181,19 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                 + ",\"sourceLanguage\":\"" + request.getSourceLanguage() + "\""
                 + ",\"targetLanguage\":\"" + request.getTargetLanguage() + "\""
                 + ",\"domain\":" + (request.getDomain() == null ? "null" : "\"" + request.getDomain() + "\"")
+                + ",\"translationEngine\":"
+                + (request.getTranslationEngine() == null ? "null" : "\"" + normalizeTranslationEngine(request.getTranslationEngine()) + "\"")
                 + ",\"sourceText\":\"" + escaped + "\"}";
+    }
+
+    private String normalizeTranslationEngine(String engine) {
+        if (!StringUtils.hasText(engine)) {
+            return null;
+        }
+        return switch (engine.trim().toUpperCase()) {
+            case "ALIYUN" -> "ALIBABA_CLOUD";
+            case "GOOGLE", "MICROSOFT", "DEEPL", "TENCENT", "BAIDU", "QWEN", "ALIBABA_CLOUD" -> engine.trim().toUpperCase();
+            default -> engine.trim().toUpperCase();
+        };
     }
 }

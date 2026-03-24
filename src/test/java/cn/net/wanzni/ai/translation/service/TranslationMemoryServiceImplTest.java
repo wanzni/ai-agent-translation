@@ -16,7 +16,7 @@ class TranslationMemoryServiceImplTest {
     @Test
     void shouldNotSaveWhenTmGateRejectsCandidate() {
         TranslationMemoryEntryRepository repository = mock(TranslationMemoryEntryRepository.class);
-        TranslationMemoryServiceImpl service = new TranslationMemoryServiceImpl(repository);
+        TranslationMemoryServiceImpl service = new TranslationMemoryServiceImpl(repository, mock(cn.net.wanzni.ai.translation.repository.ReviewTaskRepository.class));
 
         Optional<TranslationMemoryEntry> result = service.saveApprovedPair(
                 "source",
@@ -26,6 +26,7 @@ class TranslationMemoryServiceImplTest {
                 "saas",
                 95,
                 true,
+                false,
                 false,
                 false,
                 1L,
@@ -39,7 +40,7 @@ class TranslationMemoryServiceImplTest {
     @Test
     void shouldUpdateExistingEntryOnlyWhenNewVersionHasHigherScore() {
         TranslationMemoryEntryRepository repository = mock(TranslationMemoryEntryRepository.class);
-        TranslationMemoryServiceImpl service = new TranslationMemoryServiceImpl(repository);
+        TranslationMemoryServiceImpl service = new TranslationMemoryServiceImpl(repository, mock(cn.net.wanzni.ai.translation.repository.ReviewTaskRepository.class));
 
         TranslationMemoryEntry existing = TranslationMemoryEntry.builder()
                 .id(10L)
@@ -68,6 +69,7 @@ class TranslationMemoryServiceImplTest {
                 true,
                 false,
                 true,
+                false,
                 1L,
                 2L
         );
@@ -90,6 +92,7 @@ class TranslationMemoryServiceImplTest {
                 true,
                 false,
                 true,
+                false,
                 1L,
                 2L
         );
@@ -102,7 +105,7 @@ class TranslationMemoryServiceImplTest {
     @Test
     void shouldNotOverrideGlobalEntryWhenSavingDomainSpecificVersion() {
         TranslationMemoryEntryRepository repository = mock(TranslationMemoryEntryRepository.class);
-        TranslationMemoryServiceImpl service = new TranslationMemoryServiceImpl(repository);
+        TranslationMemoryServiceImpl service = new TranslationMemoryServiceImpl(repository, mock(cn.net.wanzni.ai.translation.repository.ReviewTaskRepository.class));
 
         when(repository.findFirstBySourceTextHashAndSourceLanguageAndTargetLanguageAndDomain(any(), eq("en"), eq("zh"), eq("saas")))
                 .thenReturn(Optional.empty());
@@ -122,6 +125,7 @@ class TranslationMemoryServiceImplTest {
                 true,
                 false,
                 true,
+                false,
                 1L,
                 2L
         );

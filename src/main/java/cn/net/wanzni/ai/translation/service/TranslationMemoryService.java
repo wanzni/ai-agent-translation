@@ -23,6 +23,7 @@ public interface TranslationMemoryService {
                                                       Boolean hardRulePassed,
                                                       Boolean sensitiveContentDetected,
                                                       Boolean tmEligible,
+                                                      Boolean humanReviewed,
                                                       Long createdFromTaskId,
                                                       Long createdBy);
 }

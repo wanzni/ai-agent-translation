@@ -2,6 +2,7 @@ package cn.net.wanzni.ai.translation.handler;
 
 import cn.net.wanzni.ai.translation.dto.ApiResponse;
 import cn.net.wanzni.ai.translation.exception.InsufficientPointsException;
+import cn.net.wanzni.ai.translation.exception.ResourceNotFoundException;
 import cn.net.wanzni.ai.translation.security.UserContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -163,6 +164,21 @@ public class GlobalExceptionHandler {
     /**
      * 处理空指针异常
      */
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<ApiResponse<String>> handleResourceNotFoundException(
+            ResourceNotFoundException ex, HttpServletRequest request) {
+
+        logger.warn("资源不存在: {}", ex.getMessage());
+
+        ApiResponse<String> response = ApiResponse.error(
+                "资源不存在",
+                "NOT_FOUND",
+                ex.getMessage()
+        );
+
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+    }
+
     @ExceptionHandler(NullPointerException.class)
     public ResponseEntity<ApiResponse<String>> handleNullPointerException(
             NullPointerException ex, HttpServletRequest request) {

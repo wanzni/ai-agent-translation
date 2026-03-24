@@ -2,6 +2,8 @@ package cn.net.wanzni.ai.translation.service.impl;
 
 import cn.net.wanzni.ai.translation.dto.TranslationMemoryMatch;
 import cn.net.wanzni.ai.translation.entity.TranslationMemoryEntry;
+import cn.net.wanzni.ai.translation.enums.ReviewStatusEnum;
+import cn.net.wanzni.ai.translation.repository.ReviewTaskRepository;
 import cn.net.wanzni.ai.translation.repository.TranslationMemoryEntryRepository;
 import cn.net.wanzni.ai.translation.service.TranslationMemoryService;
 import com.huaban.analysis.jieba.JiebaSegmenter;
@@ -33,8 +35,10 @@ public class TranslationMemoryServiceImpl implements TranslationMemoryService {
 
     private static final int CANDIDATE_FETCH_SIZE = 30;
     private static final double MIN_SIMILARITY = 0.2d;
+    private static final int HUMAN_REVIEW_MIN_OVERALL_SCORE = 80;
 
     private final TranslationMemoryEntryRepository translationMemoryEntryRepository;
+    private final ReviewTaskRepository reviewTaskRepository;
     private final JiebaSegmenter jiebaSegmenter = new JiebaSegmenter();
 
     @Override
@@ -128,9 +132,16 @@ public class TranslationMemoryServiceImpl implements TranslationMemoryService {
                                                              Boolean hardRulePassed,
                                                              Boolean sensitiveContentDetected,
                                                              Boolean tmEligible,
+                                                             Boolean humanReviewed,
                                                              Long createdFromTaskId,
                                                              Long createdBy) {
-        if (!Boolean.TRUE.equals(tmEligible) || !Boolean.TRUE.equals(hardRulePassed) || Boolean.TRUE.equals(sensitiveContentDetected)) {
+        boolean gatePassed = Boolean.TRUE.equals(tmEligible)
+                && Boolean.TRUE.equals(hardRulePassed)
+                && !Boolean.TRUE.equals(sensitiveContentDetected);
+        boolean humanReviewedGatePassed = Boolean.TRUE.equals(humanReviewed)
+                && Boolean.TRUE.equals(hardRulePassed)
+                && safeInt(overallScore) >= HUMAN_REVIEW_MIN_OVERALL_SCORE;
+        if (!gatePassed && !humanReviewedGatePassed) {
             return Optional.empty();
         }
         if (!StringUtils.hasText(sourceText) || !StringUtils.hasText(targetText)) {
@@ -214,7 +225,19 @@ public class TranslationMemoryServiceImpl implements TranslationMemoryService {
                 .hitCount(entry.getHitCount())
                 .similarityScore(similarity)
                 .exactMatch(exactMatch)
+                .sourceType(resolveSourceType(entry.getCreatedFromTaskId()))
                 .build();
+    }
+
+    private String resolveSourceType(Long createdFromTaskId) {
+        if (createdFromTaskId == null) {
+            return "AUTO";
+        }
+        return reviewTaskRepository.findFirstByAgentTaskIdOrderByCreatedAtDesc(createdFromTaskId)
+                .filter(task -> task.getReviewStatus() == ReviewStatusEnum.APPROVED
+                        || task.getReviewStatus() == ReviewStatusEnum.REVISED)
+                .map(task -> "HUMAN_REVIEWED")
+                .orElse("AUTO");
     }
 
     private double calculateSimilarity(String left, String right) {

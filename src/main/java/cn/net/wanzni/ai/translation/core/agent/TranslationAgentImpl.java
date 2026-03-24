@@ -125,6 +125,7 @@ public class TranslationAgentImpl implements TranslationAgent {
         if (ragContext.getHistorySnippets() != null && !ragContext.getHistorySnippets().isEmpty()) {
             sb.append("Historical translations:\n");
             for (RagContext.HistorySnippet snippet : ragContext.getHistorySnippets()) {
+                sb.append("  SOURCE_TYPE: ").append(snippet.getSourceType()).append("\n");
                 sb.append("  SRC: ").append(snippet.getSource()).append("\n");
                 sb.append("  TGT: ").append(snippet.getTarget()).append("\n");
             }

@@ -72,5 +72,7 @@ public class RagContext {
         private String source;
         /** 目标译文片段 */
         private String target;
+        /** ????????M / HISTORY */
+        private String sourceType;
     }
 }

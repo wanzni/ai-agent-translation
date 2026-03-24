@@ -175,6 +175,22 @@ public interface TranslationRecordRepository extends JpaRepository<TranslationRe
     @Query("SELECT tr FROM TranslationRecord tr WHERE tr.userId = :userId ORDER BY tr.createdAt DESC")
     List<TranslationRecord> findRecentTranslations(@Param("userId") Long userId, Pageable pageable);
 
+    @Query("""
+            SELECT tr
+            FROM TranslationRecord tr
+            LEFT JOIN AgentTask at ON at.id = tr.agentTaskId
+            WHERE tr.sourceLanguage = :sourceLanguage
+              AND tr.targetLanguage = :targetLanguage
+              AND tr.sourceText IS NOT NULL
+              AND tr.translatedText IS NOT NULL
+              AND (:domain IS NULL OR at.domain = :domain)
+            ORDER BY tr.createdAt DESC
+            """)
+    List<TranslationRecord> findRagFallbackCandidates(@Param("sourceLanguage") String sourceLanguage,
+                                                      @Param("targetLanguage") String targetLanguage,
+                                                      @Param("domain") String domain,
+                                                      Pageable pageable);
+
     /**
      * 删除指定时间之前的翻译记录
      * 
@@ -241,4 +257,6 @@ public interface TranslationRecordRepository extends JpaRepository<TranslationRe
      */
     @Query("SELECT tr.translationType, COUNT(tr) FROM TranslationRecord tr WHERE tr.userId = :userId GROUP BY tr.translationType ORDER BY COUNT(tr) DESC")
     List<Object[]> getTranslationTypeCountsByUserId(@Param("userId") Long userId);
+
+    Optional<TranslationRecord> findFirstByAgentTaskIdOrderByCreatedAtDesc(Long agentTaskId);
 }

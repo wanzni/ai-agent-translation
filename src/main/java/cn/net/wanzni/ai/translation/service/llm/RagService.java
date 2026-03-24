@@ -3,8 +3,10 @@ package cn.net.wanzni.ai.translation.service.llm;
 import cn.net.wanzni.ai.translation.dto.RagContext;
 import cn.net.wanzni.ai.translation.dto.TranslationMemoryMatch;
 import cn.net.wanzni.ai.translation.dto.TranslationRequest;
+import cn.net.wanzni.ai.translation.entity.TranslationRecord;
 import cn.net.wanzni.ai.translation.entity.TerminologyEntry;
 import cn.net.wanzni.ai.translation.repository.TerminologyEntryRepository;
+import cn.net.wanzni.ai.translation.repository.TranslationRecordRepository;
 import cn.net.wanzni.ai.translation.service.TranslationMemoryService;
 import com.huaban.analysis.jieba.JiebaSegmenter;
 import lombok.RequiredArgsConstructor;
@@ -29,8 +31,11 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class RagService {
 
+    private static final int HISTORY_CANDIDATE_FETCH_SIZE = 30;
+
     private final TerminologyEntryRepository terminologyEntryRepository;
     private final TranslationMemoryService translationMemoryService;
+    private final TranslationRecordRepository translationRecordRepository;
     /**
      * 可选获取 EmbeddingModel 的 Provider；如未配置，将回退至关键词检索。
      */
@@ -81,7 +86,8 @@ public class RagService {
             if (!historySnippets.isEmpty()) {
                 contextSnippets.add("Relevant translation memory examples:");
                 for (RagContext.HistorySnippet s : historySnippets) {
-                    contextSnippets.add("SRC: " + Optional.ofNullable(s.getSource()).orElse("")
+                    contextSnippets.add("SOURCE_TYPE: " + Optional.ofNullable(s.getSourceType()).orElse("UNKNOWN")
+                            + "\nSRC: " + Optional.ofNullable(s.getSource()).orElse("")
                             + "\nTGT: " + Optional.ofNullable(s.getTarget()).orElse(""));
                 }
             }
@@ -326,7 +332,7 @@ public class RagService {
      * Searches for history snippets.
      * 搜索用户历史记录中的相关片段
      *
-     * @param userId the user ID
+     * @param targetLanguage the user ID
      * @param sourceText the source text
      * @param topK the number of snippets to return
      * @return the list of history snippets
@@ -350,12 +356,89 @@ public class RagService {
                 list.add(RagContext.HistorySnippet.builder()
                         .source(safeCut(match.getSourceText(), 300))
                         .target(safeCut(match.getTargetText(), 300))
+                        .sourceType(StringUtils.hasText(match.getSourceType()) ? match.getSourceType() : "TM")
                         .build());
+            }
+            if (list.size() < topK) {
+                int remain = Math.max(0, topK - list.size());
+                Set<String> existingSources = list.stream()
+                        .map(RagContext.HistorySnippet::getSource)
+                        .filter(StringUtils::hasText)
+                        .collect(Collectors.toCollection(LinkedHashSet::new));
+                List<TranslationRecord> records = translationRecordRepository.findRagFallbackCandidates(
+                        sourceLanguage,
+                        targetLanguage,
+                        normalizeDomain(domain),
+                        PageRequest.of(0, HISTORY_CANDIDATE_FETCH_SIZE)
+                );
+                records.stream()
+                        .map(record -> Map.entry(record, calculateHistorySimilarity(sourceText, record.getSourceText())))
+                        .filter(entry -> entry.getValue() >= 0.2d)
+                        .sorted((left, right) -> {
+                            int similarityCompare = Double.compare(right.getValue(), left.getValue());
+                            if (similarityCompare != 0) {
+                                return similarityCompare;
+                            }
+                            return Comparator.comparing(TranslationRecord::getCreatedAt,
+                                            Comparator.nullsLast(Comparator.reverseOrder()))
+                                    .compare(right.getKey(), left.getKey());
+                        })
+                        .map(Map.Entry::getKey)
+                        .filter(record -> !existingSources.contains(safeCut(record.getSourceText(), 300)))
+                        .limit(remain)
+                        .forEach(record -> list.add(RagContext.HistorySnippet.builder()
+                                .source(safeCut(record.getSourceText(), 300))
+                                .target(safeCut(record.getTranslatedText(), 300))
+                                .sourceType("HISTORY")
+                                .build()));
             }
         } catch (Exception e) {
             log.warn("历史检索失败，降级为空: {}", e.getMessage());
         }
         return list;
+    }
+
+    private double calculateHistorySimilarity(String left, String right) {
+        if (!StringUtils.hasText(left) || !StringUtils.hasText(right)) {
+            return 0.0d;
+        }
+        String normalizedLeft = normalizeText(left);
+        String normalizedRight = normalizeText(right);
+        if (normalizedLeft.equals(normalizedRight)) {
+            return 1.0d;
+        }
+        if (normalizedLeft.contains(normalizedRight) || normalizedRight.contains(normalizedLeft)) {
+            return 0.85d;
+        }
+        Set<String> leftTokens = new LinkedHashSet<>(extractKeywords(left));
+        Set<String> rightTokens = new LinkedHashSet<>(extractKeywords(right));
+        if (leftTokens.isEmpty() || rightTokens.isEmpty()) {
+            return 0.0d;
+        }
+        Set<String> intersection = new LinkedHashSet<>(leftTokens);
+        intersection.retainAll(rightTokens);
+        Set<String> union = new LinkedHashSet<>(leftTokens);
+        union.addAll(rightTokens);
+        double coverage = (double) intersection.size() / leftTokens.size();
+        double jaccard = union.isEmpty() ? 0.0d : (double) intersection.size() / union.size();
+        return coverage * 0.6d + jaccard * 0.4d;
+    }
+
+    private String normalizeText(String text) {
+        if (!StringUtils.hasText(text)) {
+            return "";
+        }
+        return text.trim()
+                .replaceAll("[\\r\\n]+", " ")
+                .replaceAll("\\s+", " ")
+                .toLowerCase(Locale.ROOT);
+    }
+
+    private String normalizeDomain(String domain) {
+        if (!StringUtils.hasText(domain)) {
+            return null;
+        }
+        return domain.trim().toLowerCase(Locale.ROOT);
     }
 
     /**
@@ -386,7 +469,7 @@ public class RagService {
                 return candidates;
             }
             // 计算源文本与候选片段向量（M6 返回 List<float[]>）
-            List<float[]> srcVecs = embeddingModel.embed(java.util.List.of(sourceText));
+            List<float[]> srcVecs = embeddingModel.embed(List.of(sourceText));
             float[] srcVec = srcVecs.get(0);
             List<float[]> candVecs = embeddingModel.embed(candidates);
             // 依据余弦相似度排序

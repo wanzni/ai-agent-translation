@@ -30,6 +30,9 @@ public class AgentTaskCreateRequest {
     @Size(max = 100, message = "Domain is too long")
     private String domain;
 
+    @Size(max = 64, message = "Translation engine is too long")
+    private String translationEngine;
+
     @Size(max = 64, message = "Business type is too long")
     private String bizType;
 

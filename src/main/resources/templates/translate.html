@@ -224,6 +224,22 @@
             .agent-step.action .agent-step-title { color: #fcd34d; }
             .agent-step.observation .agent-step-title { color: #6ee7b7; }
             .agent-step.translating .agent-step-title { color: #f9a8d4; }
+
+            .agent-task-meta {
+                font-size: 0.75rem;
+                color: rgba(255, 255, 255, 0.75);
+            }
+
+            .agent-step-status {
+                font-size: 0.75rem;
+                color: rgba(255, 255, 255, 0.8);
+                margin-top: 0.35rem;
+            }
+
+            .agent-step.empty {
+                text-align: center;
+                color: rgba(255, 255, 255, 0.8);
+            }
         </style>
     </th:block>
 </head>
@@ -364,28 +380,15 @@
 
                 <!-- Agent思考过程面板 -->
                 <div class="agent-thinking-panel" id="agentThinkingPanel">
-                    <div class="d-flex align-items-center mb-2">
-                        <i class="fas fa-brain me-2"></i>
-                        <strong>Agent 推理过程</strong>
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <div>
+                            <i class="fas fa-diagram-project me-2"></i>
+                            <strong>Workflow Timeline</strong>
+                        </div>
+                        <span class="badge bg-light text-dark" id="agentTaskStatusText">WAITING</span>
                     </div>
-                    <div id="agentStepsContainer">
-                        <div class="agent-step thought" id="stepThought" style="display:none;">
-                            <div class="agent-step-title"><i class="fas fa-lightbulb me-1"></i>Thought (思考)</div>
-                            <div class="agent-step-content" id="stepThoughtContent"></div>
-                        </div>
-                        <div class="agent-step action" id="stepAction" style="display:none;">
-                            <div class="agent-step-title"><i class="fas fa-cogs me-1"></i>Action (行动)</div>
-                            <div class="agent-step-content" id="stepActionContent"></div>
-                        </div>
-                        <div class="agent-step observation" id="stepObservation" style="display:none;">
-                            <div class="agent-step-title"><i class="fas fa-eye me-1"></i>Observation (观察)</div>
-                            <div class="agent-step-content" id="stepObservationContent"></div>
-                        </div>
-                        <div class="agent-step translating" id="stepTranslating" style="display:none;">
-                            <div class="agent-step-title"><i class="fas fa-pen me-1"></i>Translating (翻译中...)</div>
-                            <div class="agent-step-content" id="stepTranslatingContent"></div>
-                        </div>
-                    </div>
+                    <div class="agent-task-meta mb-2" id="agentTaskMeta">Waiting for task events...</div>
+                    <div id="agentStepsContainer"></div>
                 </div>
 
                 <!-- 翻译操作栏 -->
@@ -535,6 +538,40 @@
         <script>
             $(document).ready(function() {
                 let translationHistory = [];
+                let currentTaskEventSource = null;
+                let currentTaskRequestData = null;
+                let currentTaskResult = null;
+                let currentTaskTerminated = false;
+                let currentTaskHistorySaved = false;
+                let typewriterTimer = null;
+                let currentTypewriterTargetText = null;
+
+                const workflowStepLabels = {
+                    CREATED: '任务已创建',
+                    PLAN: '任务规划中',
+                    RETRIEVE_TERMINOLOGY: '检索术语与上下文',
+                    TRANSLATE: '执行翻译',
+                    QUALITY_CHECK: '质量检查',
+                    FINALIZE: '结果收口'
+                };
+
+                const workflowStepIcons = {
+                    CREATED: 'fa-circle-plus',
+                    PLAN: 'fa-list-check',
+                    RETRIEVE_TERMINOLOGY: 'fa-book-open',
+                    TRANSLATE: 'fa-language',
+                    QUALITY_CHECK: 'fa-shield-check',
+                    FINALIZE: 'fa-flag-checkered'
+                };
+
+                const taskStatusLabels = {
+                    PENDING: '待执行',
+                    RUNNING: '执行中',
+                    COMPLETED: '已完成',
+                    FAILED: '失败',
+                    REVIEW_REQUIRED: '待复核',
+                    CANCELLED: '已取消'
+                };
 
                 // Web Speech 语音朗读支持
                 const Speech = {
@@ -596,6 +633,7 @@
                     }
                 };
                 Speech.init();
+                resetAgentSteps();
 
                 // 字符计数
                 $('#sourceText').on('input', function() {
@@ -650,11 +688,22 @@
 
                 // 清空功能
                 $('#clearBtn').click(function() {
+                    closeTaskStream();
+                    stopTypewriter();
+                    currentTaskResult = null;
+                    currentTaskTerminated = false;
+                    currentTaskHistorySaved = false;
                     $('#sourceText').val('');
                     $('#targetText').val('');
                     $('#charCount').text('0');
                     $('#copyBtn, #saveBtn').prop('disabled', true);
+                    $('#speakTargetBtn').prop('disabled', true);
+                    $('#polishBtn').prop('disabled', true);
+                    $('#loadingOverlay').addClass('d-none');
+                    $('#translateBtn').prop('disabled', false);
+                    $('#agentThinkingPanel').removeClass('show');
                     $('#alternativeTranslations').addClass('d-none');
+                    resetAgentSteps();
                     resetTranslationDetails();
                 });
 
@@ -780,159 +829,401 @@
                     $(`#${tab}-tab`).removeClass('d-none');
                 });
 
-                // 执行翻译 (使用SSE流式输出)
+                // 执行翻译：先创建任务，再订阅真实 workflow SSE
                 function performTranslation() {
                     const sourceText = $('#sourceText').val().trim();
                     const sourceLanguage = $('#sourceLanguage').val();
                     const targetLanguage = $('#targetLanguage').val();
                     const engine = $('#translationEngine').val();
                     const translationType = $('#translationType').val();
-                    const useTerminology = $('#useTerminology').is(':checked');
-                    const qualityAssessment = $('#qualityAssessment').is(':checked');
 
                     if (!sourceText) {
                         Utils.showToast('请输入要翻译的文本', 'warning');
                         return;
                     }
 
-                    // 显示加载状态和思考面板
+                    closeTaskStream();
+                    stopTypewriter();
+                    currentTaskResult = null;
+                    currentTaskTerminated = false;
+                    currentTaskHistorySaved = false;
+
                     $('#loadingOverlay').removeClass('d-none');
                     $('#translateBtn').prop('disabled', true);
                     $('#agentThinkingPanel').addClass('show');
-                    $('#targetText').val('');
+                    $('#targetText').val('').removeClass('translation-result');
+                    $('#copyBtn, #saveBtn').prop('disabled', true);
+                    $('#speakTargetBtn').prop('disabled', true);
+                    $('#polishBtn').prop('disabled', true);
 
-                    // 重置思考步骤
                     resetAgentSteps();
 
-                    // 构建请求数据
-                    const u = JSON.parse(localStorage.getItem('authUser') || 'null');
+                    const authUser = JSON.parse(localStorage.getItem('authUser') || 'null');
                     const requestData = {
                         sourceText: sourceText,
                         sourceLanguage: sourceLanguage,
                         targetLanguage: targetLanguage,
                         translationType: translationType,
-                        engine: engine,
-                        useTerminology: useTerminology,
-                        needQualityAssessment: qualityAssessment,
-                        userId: (u && u.id) ? String(u.id) : ''
+                        engine: normalizeTaskEngineCode(engine),
+                        userId: (authUser && authUser.id) ? authUser.id : null
                     };
+                    currentTaskRequestData = requestData;
 
-                    // 获取token
-                    let token = null;
-                    try {
-                        token = (typeof getAuthToken === 'function') ? getAuthToken() : null;
-                    } catch (e) {}
-
-                    // 使用SSE流式翻译
-                    const eventSource = new EventSource('/api/translation/stream?' + new URLSearchParams({
-                        sourceText: requestData.sourceText,
-                        sourceLanguage: requestData.sourceLanguage,
-                        targetLanguage: requestData.targetLanguage,
-                        domain: requestData.translationType
-                    }));
-
-                    if (token) {
-                        eventSource.headers = { 'Authorization': 'Bearer ' + token };
-                    }
-
-                    eventSource.onmessage = function(event) {
-                        try {
-                            const data = JSON.parse(event.data);
-                            handleSSEEvent(data);
-                        } catch (e) {
-                            console.error('SSE解析失败:', e);
-                        }
-                    };
-
-                    eventSource.addEventListener('start', function(event) {
-                        // 开始
-                    });
-
-                    eventSource.addEventListener('thought', function(event) {
-                        try {
-                            const data = JSON.parse(event.data);
-                            showAgentStep('thought', data.content);
-                        } catch (e) {}
-                    });
-
-                    eventSource.addEventListener('action', function(event) {
-                        try {
-                            const data = JSON.parse(event.data);
-                            showAgentStep('action', data.content);
-                        } catch (e) {}
-                    });
-
-                    eventSource.addEventListener('observation', function(event) {
-                        try {
-                            const data = JSON.parse(event.data);
-                            showAgentStep('observation', data.content);
-                        } catch (e) {}
-                    });
-
-                    eventSource.addEventListener('translating', function(event) {
-                        try {
-                            const data = JSON.parse(event.data);
-                            showAgentStep('translating', '');
-                        } catch (e) {}
-                    });
-
-                    eventSource.addEventListener('delta', function(event) {
-                        try {
-                            const data = JSON.parse(event.data);
-                            const current = $('#targetText').val();
-                            $('#targetText').val(current + data.chunk);
-                        } catch (e) {}
-                    });
-
-                    eventSource.addEventListener('done', function(event) {
-                        try {
-                            const data = JSON.parse(event.data);
-                            $('#targetText').addClass('translation-result');
-                            $('#copyBtn, #saveBtn').prop('disabled', false);
-                            $('#speakTargetBtn').prop('disabled', false);
-                            $('#polishBtn').prop('disabled', false);
+                    $.ajax({
+                        url: '/api/agent/tasks/text',
+                        method: 'POST',
+                        contentType: 'application/json',
+                        data: JSON.stringify({
+                            sourceText: requestData.sourceText,
+                            sourceLanguage: requestData.sourceLanguage,
+                            targetLanguage: requestData.targetLanguage,
+                            domain: requestData.translationType,
+                            translationEngine: requestData.engine,
+                            userId: requestData.userId
+                        }),
+                        success: function(resp) {
+                            const task = extractApiPayload(resp);
+                            if (!task || !task.id) {
+                                $('#loadingOverlay').addClass('d-none');
+                                $('#translateBtn').prop('disabled', false);
+                                Utils.showToast('任务创建失败，请重试', 'danger');
+                                return;
+                            }
+                            updateTaskMeta(task);
+                            subscribeTaskEvents(task);
+                        },
+                        error: function(xhr, status, error) {
                             $('#loadingOverlay').addClass('d-none');
                             $('#translateBtn').prop('disabled', false);
-
-                            // 保存到历史
-                            addToHistory(requestData, { translatedText: data.translatedText });
-
-                            setTimeout(() => {
-                                $('#agentThinkingPanel').removeClass('show');
-                            }, 2000);
-                        } catch (e) {}
-                        eventSource.close();
+                            Utils.handleAjaxError(xhr, status, error);
+                        }
                     });
+                }
 
-                    eventSource.onerror = function(event) {
-                        console.error('SSE错误:', event);
-                        $('#loadingOverlay').addClass('d-none');
-                        $('#translateBtn').prop('disabled', false);
-                        Utils.showToast('翻译失败，请重试', 'danger');
-                        eventSource.close();
-                    };
+                function extractApiPayload(resp) {
+                    if (!resp || typeof resp !== 'object') {
+                        return null;
+                    }
+                    if (Object.prototype.hasOwnProperty.call(resp, 'data')) {
+                        return resp.data;
+                    }
+                    return resp;
+                }
+
+                function normalizeTaskEngineCode(engine) {
+                    if (!engine) {
+                        return null;
+                    }
+                    const normalized = String(engine).trim().toUpperCase();
+                    if (normalized === 'ALIYUN') {
+                        return 'ALIBABA_CLOUD';
+                    }
+                    return normalized;
+                }
+
+                function safeJsonParse(raw) {
+                    if (!raw) {
+                        return null;
+                    }
+                    if (typeof raw === 'object') {
+                        return raw;
+                    }
+                    try {
+                        return JSON.parse(raw);
+                    } catch (e) {
+                        return null;
+                    }
+                }
+
+                function escapeHtml(text) {
+                    return $('<div>').text(text == null ? '' : String(text)).html();
+                }
+
+                function closeTaskStream() {
+                    if (currentTaskEventSource) {
+                        currentTaskEventSource.close();
+                        currentTaskEventSource = null;
+                    }
+                }
+
+                function stopTypewriter() {
+                    if (typewriterTimer) {
+                        clearTimeout(typewriterTimer);
+                        typewriterTimer = null;
+                    }
+                    currentTypewriterTargetText = null;
                 }
 
                 function resetAgentSteps() {
-                    $('#stepThought').hide();
-                    $('#stepAction').hide();
-                    $('#stepObservation').hide();
-                    $('#stepTranslating').hide();
-                    $('#stepThoughtContent').text('');
-                    $('#stepActionContent').text('');
-                    $('#stepObservationContent').text('');
-                    $('#stepTranslatingContent').text('');
+                    $('#agentStepsContainer').html(`
+                        <div class="agent-step empty" id="emptyWorkflowStep">
+                            <div class="agent-step-title">Workflow</div>
+                            <div class="agent-step-content">Waiting for workflow events...</div>
+                        </div>
+                    `);
+                    $('#agentTaskStatusText').text('WAITING');
+                    $('#agentTaskMeta').text('Waiting for task events...').removeData('baseMeta');
                 }
 
-                function showAgentStep(step, content) {
-                    const stepId = 'step' + step.charAt(0).toUpperCase() + step.slice(1);
-                    $('#' + stepId).show();
-                    if (step === 'translating') {
-                        $('#' + stepId + 'Content').text('翻译进行中...');
-                    } else {
-                        const current = $('#' + stepId + 'Content').text();
-                        $('#' + stepId + 'Content').text(current + content);
+                function setTaskStatusBadge(status) {
+                    $('#agentTaskStatusText').text(taskStatusLabels[status] || (status || 'UNKNOWN'));
+                }
+
+                function updateTaskMeta(taskInfo) {
+                    const parts = [];
+                    if (taskInfo && taskInfo.taskNo) {
+                        parts.push(`Task ${taskInfo.taskNo}`);
                     }
+                    if (taskInfo && taskInfo.traceId) {
+                        parts.push(`Trace ${taskInfo.traceId}`);
+                    }
+                    if (parts.length > 0) {
+                        const baseMeta = parts.join(' | ');
+                        $('#agentTaskMeta').data('baseMeta', baseMeta).text(baseMeta);
+                    }
+                }
+
+                function renderTaskStatus(taskEvent) {
+                    if (!taskEvent) {
+                        return;
+                    }
+                    setTaskStatusBadge(taskEvent.taskStatus);
+                    const metaParts = [];
+                    const baseMeta = $('#agentTaskMeta').data('baseMeta');
+                    if (baseMeta) {
+                        metaParts.push(baseMeta);
+                    }
+                    if (taskEvent.currentStep) {
+                        metaParts.push(`当前阶段: ${workflowStepLabels[taskEvent.currentStep] || taskEvent.currentStep}`);
+                    }
+                    if (typeof taskEvent.finalQualityScore !== 'undefined' && taskEvent.finalQualityScore !== null) {
+                        metaParts.push(`质量分: ${taskEvent.finalQualityScore}`);
+                    }
+                    if (taskEvent.needHumanReview) {
+                        metaParts.push('需要人工复核');
+                    }
+                    if (taskEvent.reviewReasonCode) {
+                        metaParts.push(`复核原因: ${taskEvent.reviewReasonCode}`);
+                    }
+                    if (taskEvent.errorMessage) {
+                        metaParts.push(`错误: ${taskEvent.errorMessage}`);
+                    }
+                    if (metaParts.length > 0) {
+                        $('#agentTaskMeta').text(metaParts.join(' | '));
+                    }
+                }
+
+                function buildStepSummary(step) {
+                    const parts = [];
+                    const output = safeJsonParse(step.outputJson);
+                    if (step.toolName) {
+                        parts.push(`工具: ${step.toolName}`);
+                    }
+                    if (step.modelName) {
+                        parts.push(`模型: ${step.modelName}`);
+                    }
+                    if (typeof step.durationMs !== 'undefined' && step.durationMs !== null) {
+                        parts.push(`耗时: ${step.durationMs}ms`);
+                    }
+                    if (output) {
+                        if (typeof output.glossaryHitCount !== 'undefined') {
+                            parts.push(`术语命中: ${output.glossaryHitCount}`);
+                        }
+                        if (typeof output.tmHitCount !== 'undefined') {
+                            parts.push(`TM 命中: ${output.tmHitCount}`);
+                        }
+                        if (typeof output.historyFallbackCount !== 'undefined') {
+                            parts.push(`History fallback: ${output.historyFallbackCount}`);
+                        }
+                        if (typeof output.overallScore !== 'undefined') {
+                            parts.push(`总分: ${output.overallScore}`);
+                        }
+                        if (typeof output.tmEligible !== 'undefined') {
+                            parts.push(`TM gate: ${output.tmEligible ? 'PASS' : 'REJECT'}`);
+                        }
+                        if (typeof output.tmStored !== 'undefined') {
+                            parts.push(`TM 回流: ${output.tmStored ? 'YES' : 'NO'}`);
+                        }
+                    }
+                    if (step.errorMessage) {
+                        parts.push(`错误: ${step.errorMessage}`);
+                    }
+                    return parts.join(' | ') || '步骤已记录';
+                }
+
+                function renderWorkflowStep(step) {
+                    if (!step) {
+                        return;
+                    }
+                    $('#emptyWorkflowStep').remove();
+                    const stepNo = step.stepNo || 'x';
+                    const stepId = `workflowStep${stepNo}`;
+                    const title = workflowStepLabels[step.stepType] || step.stepName || step.stepType || 'Workflow Step';
+                    const icon = workflowStepIcons[step.stepType] || 'fa-circle-dot';
+                    const html = `
+                        <div class="agent-step" id="${stepId}">
+                            <div class="agent-step-title"><i class="fas ${icon} me-1"></i>${escapeHtml(title)}</div>
+                            <div class="agent-step-content">${escapeHtml(buildStepSummary(step))}</div>
+                            <div class="agent-step-status">Status: ${escapeHtml(step.status || 'UNKNOWN')}</div>
+                        </div>
+                    `;
+                    const existing = $('#' + stepId);
+                    if (existing.length > 0) {
+                        existing.replaceWith(html);
+                    } else {
+                        $('#agentStepsContainer').append(html);
+                    }
+                }
+
+                function renderSnapshot(snapshot) {
+                    resetAgentSteps();
+                    updateTaskMeta(snapshot);
+                    renderTaskStatus(snapshot);
+                    if (snapshot.steps && snapshot.steps.length > 0) {
+                        snapshot.steps.forEach(renderWorkflowStep);
+                    }
+                }
+
+                function startTypewriter(text, onComplete) {
+                    stopTypewriter();
+                    const fullText = text || '';
+                    currentTypewriterTargetText = fullText;
+                    $('#targetText').val('');
+                    if (!fullText) {
+                        if (typeof onComplete === 'function') {
+                            onComplete();
+                        }
+                        return;
+                    }
+                    const chunkSize = fullText.length > 120 ? 6 : 3;
+                    const delay = fullText.length > 120 ? 15 : 25;
+                    let index = 0;
+
+                    function tick() {
+                        index = Math.min(fullText.length, index + chunkSize);
+                        $('#targetText').val(fullText.substring(0, index));
+                        if (index >= fullText.length) {
+                            typewriterTimer = null;
+                            if (typeof onComplete === 'function') {
+                                onComplete();
+                            }
+                            if (currentTaskResult && currentTaskResult.finalResponse === fullText) {
+                                finalizeResultUi(currentTaskResult);
+                            }
+                            return;
+                        }
+                        typewriterTimer = setTimeout(tick, delay);
+                    }
+
+                    tick();
+                }
+
+                function finalizeResultUi(result) {
+                    $('#targetText').addClass('translation-result');
+                    $('#copyBtn, #saveBtn').prop('disabled', false);
+                    $('#speakTargetBtn').prop('disabled', !(result && result.finalResponse));
+                    $('#polishBtn').prop('disabled', !(result && result.finalResponse && result.finalResponse.trim().length > 0));
+
+                    if (!currentTaskHistorySaved && currentTaskRequestData && result && result.finalResponse) {
+                        addToHistory(currentTaskRequestData, {
+                            translatedText: result.finalResponse,
+                            engine: result.selectedModel || currentTaskRequestData.engine || 'AGENT'
+                        });
+                        currentTaskHistorySaved = true;
+                    }
+                }
+
+                function handleTaskResult(result) {
+                    currentTaskResult = result;
+                    $('#loadingOverlay').addClass('d-none');
+                    if (typewriterTimer && currentTypewriterTargetText === (result.finalResponse || '')) {
+                        return;
+                    }
+                    if ($('#targetText').val() === (result.finalResponse || '')) {
+                        finalizeResultUi(result);
+                        return;
+                    }
+                    startTypewriter(result.finalResponse, function() {
+                        finalizeResultUi(result);
+                    });
+                }
+
+                function tryStartPreviewFromStep(step) {
+                    if (!step || step.stepType !== 'TRANSLATE') {
+                        return;
+                    }
+                    if (currentTaskResult) {
+                        return;
+                    }
+                    const output = safeJsonParse(step.outputJson);
+                    if (!output || !output.translatedText) {
+                        return;
+                    }
+                    if (currentTypewriterTargetText === output.translatedText) {
+                        return;
+                    }
+                    $('#loadingOverlay').addClass('d-none');
+                    startTypewriter(output.translatedText);
+                }
+
+                function handleTaskDone(doneEvent) {
+                    currentTaskTerminated = true;
+                    closeTaskStream();
+                    $('#translateBtn').prop('disabled', false);
+                    if (doneEvent && doneEvent.terminalStatus) {
+                        setTaskStatusBadge(doneEvent.terminalStatus);
+                    }
+                    if (!doneEvent || (doneEvent.terminalStatus !== 'COMPLETED' && doneEvent.terminalStatus !== 'REVIEW_REQUIRED')) {
+                        $('#loadingOverlay').addClass('d-none');
+                        Utils.showToast('任务执行失败，请重试', 'danger');
+                    }
+                }
+
+                function subscribeTaskEvents(task) {
+                    closeTaskStream();
+                    currentTaskEventSource = new EventSource(`/api/agent/tasks/${task.id}/events`);
+
+                    currentTaskEventSource.addEventListener('connected', function(event) {
+                        const data = safeJsonParse(event.data);
+                        updateTaskMeta(data);
+                    });
+
+                    currentTaskEventSource.addEventListener('snapshot', function(event) {
+                        const data = safeJsonParse(event.data);
+                        renderSnapshot(data);
+                    });
+
+                    currentTaskEventSource.addEventListener('task', function(event) {
+                        const data = safeJsonParse(event.data);
+                        renderTaskStatus(data);
+                    });
+
+                    currentTaskEventSource.addEventListener('step', function(event) {
+                        const data = safeJsonParse(event.data);
+                        renderWorkflowStep(data);
+                        tryStartPreviewFromStep(data);
+                    });
+
+                    currentTaskEventSource.addEventListener('result', function(event) {
+                        const data = safeJsonParse(event.data);
+                        handleTaskResult(data);
+                    });
+
+                    currentTaskEventSource.addEventListener('done', function(event) {
+                        const data = safeJsonParse(event.data);
+                        handleTaskDone(data);
+                    });
+
+                    currentTaskEventSource.onerror = function(event) {
+                        if (currentTaskTerminated) {
+                            return;
+                        }
+                        console.error('Workflow SSE 错误:', event);
+                        closeTaskStream();
+                        $('#loadingOverlay').addClass('d-none');
+                        $('#translateBtn').prop('disabled', false);
+                        Utils.showToast('实时任务流连接失败，请重试', 'danger');
+                    };
                 }
 
                 // 显示翻译结果

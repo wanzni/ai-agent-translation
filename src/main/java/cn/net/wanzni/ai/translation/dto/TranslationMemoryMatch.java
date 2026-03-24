@@ -26,4 +26,6 @@ public class TranslationMemoryMatch {
     private Double similarityScore;
 
     private Boolean exactMatch;
+
+    private String sourceType;
 }

@@ -7,23 +7,31 @@ import cn.net.wanzni.ai.translation.dto.TranslationRequest;
 import cn.net.wanzni.ai.translation.dto.TranslationResponse;
 import cn.net.wanzni.ai.translation.entity.AgentTask;
 import cn.net.wanzni.ai.translation.entity.AgentTaskStep;
+import cn.net.wanzni.ai.translation.entity.ReviewTask;
+import cn.net.wanzni.ai.translation.entity.TranslationRecord;
 import cn.net.wanzni.ai.translation.enums.AgentStepStatusEnum;
 import cn.net.wanzni.ai.translation.enums.AgentStepTypeEnum;
 import cn.net.wanzni.ai.translation.enums.AgentTaskStatusEnum;
+import cn.net.wanzni.ai.translation.enums.ReviewStatusEnum;
 import cn.net.wanzni.ai.translation.exception.ResourceNotFoundException;
 import cn.net.wanzni.ai.translation.repository.AgentTaskRepository;
 import cn.net.wanzni.ai.translation.repository.AgentTaskStepRepository;
+import cn.net.wanzni.ai.translation.repository.ReviewTaskRepository;
+import cn.net.wanzni.ai.translation.repository.TranslationRecordRepository;
 import cn.net.wanzni.ai.translation.service.QualityAssessmentService;
+import cn.net.wanzni.ai.translation.service.ReviewTaskService;
 import cn.net.wanzni.ai.translation.service.TranslationMemoryService;
 import cn.net.wanzni.ai.translation.service.TranslationService;
 import cn.net.wanzni.ai.translation.service.agent.AgentWorkflowService;
 import cn.net.wanzni.ai.translation.service.llm.RagService;
+import cn.net.wanzni.ai.translation.service.sse.AgentTaskEventStreamService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
@@ -40,7 +48,11 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
     private final RagService ragService;
     private final TranslationService translationService;
     private final TranslationMemoryService translationMemoryService;
+    private final TranslationRecordRepository translationRecordRepository;
+    private final ReviewTaskRepository reviewTaskRepository;
+    private final ReviewTaskService reviewTaskService;
     private final QualityAssessmentService qualityAssessmentService;
+    private final AgentTaskEventStreamService agentTaskEventStreamService;
     private final ObjectMapper objectMapper;
     private final Executor workflowExecutor;
 
@@ -49,7 +61,11 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
                                     RagService ragService,
                                     TranslationService translationService,
                                     TranslationMemoryService translationMemoryService,
+                                    TranslationRecordRepository translationRecordRepository,
+                                    ReviewTaskRepository reviewTaskRepository,
+                                    ReviewTaskService reviewTaskService,
                                     QualityAssessmentService qualityAssessmentService,
+                                    AgentTaskEventStreamService agentTaskEventStreamService,
                                     ObjectMapper objectMapper,
                                     @Qualifier("chatSseExecutor") Executor workflowExecutor) {
         this.agentTaskRepository = agentTaskRepository;
@@ -57,7 +73,11 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
         this.ragService = ragService;
         this.translationService = translationService;
         this.translationMemoryService = translationMemoryService;
+        this.translationRecordRepository = translationRecordRepository;
+        this.reviewTaskRepository = reviewTaskRepository;
+        this.reviewTaskService = reviewTaskService;
         this.qualityAssessmentService = qualityAssessmentService;
+        this.agentTaskEventStreamService = agentTaskEventStreamService;
         this.objectMapper = objectMapper;
         this.workflowExecutor = workflowExecutor;
     }
@@ -79,7 +99,7 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
 
         updateTaskRunning(task);
 
-        TranslationRequest translationRequest = TranslationRequest.builder()
+        TranslationRequest.TranslationRequestBuilder requestBuilder = TranslationRequest.builder()
                 .userId(task.getUserId())
                 .agentTaskId(task.getId())
                 .sourceText(task.getSourceText())
@@ -88,8 +108,11 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
                 .domain(task.getDomain())
                 .useTerminology(Boolean.TRUE)
                 .useRag(Boolean.TRUE)
-                .needQualityAssessment(Boolean.TRUE)
-                .build();
+                .needQualityAssessment(Boolean.TRUE);
+        if (StringUtils.hasText(task.getSelectedModel())) {
+            requestBuilder.translationEngine(task.getSelectedModel());
+        }
+        TranslationRequest translationRequest = requestBuilder.build();
 
         try {
             executePlanStep(task, translationRequest);
@@ -109,7 +132,8 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
         task.setStatus(AgentTaskStatusEnum.RUNNING);
         task.setCurrentStep(AgentStepTypeEnum.PLAN.name());
         task.setStartedAt(LocalDateTime.now());
-        agentTaskRepository.save(task);
+        AgentTask savedTask = agentTaskRepository.save(task);
+        agentTaskEventStreamService.publishTaskUpdate(savedTask, null);
     }
 
     private void executePlanStep(AgentTask task, TranslationRequest request) {
@@ -131,11 +155,19 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
         long start = System.currentTimeMillis();
         try {
             RagContext ragContext = ragService.buildRagContext(request);
+            long tmHistoryCount = ragContext.getHistorySnippets() == null ? 0 : ragContext.getHistorySnippets().stream()
+                    .filter(snippet -> "TM".equalsIgnoreCase(snippet.getSourceType())
+                            || "HUMAN_REVIEWED".equalsIgnoreCase(snippet.getSourceType()))
+                    .count();
+            long fallbackHistoryCount = ragContext.getHistorySnippets() == null ? 0 : ragContext.getHistorySnippets().stream()
+                    .filter(snippet -> "HISTORY".equalsIgnoreCase(snippet.getSourceType()))
+                    .count();
             Map<String, Object> output = new LinkedHashMap<>();
             output.put("keywordCount", ragContext.getKeywords() == null ? 0 : ragContext.getKeywords().size());
             output.put("glossaryHitCount", ragContext.getGlossaryMap() == null ? 0 : ragContext.getGlossaryMap().size());
             output.put("historyHitCount", ragContext.getHistorySnippets() == null ? 0 : ragContext.getHistorySnippets().size());
-            output.put("tmHitCount", ragContext.getHistorySnippets() == null ? 0 : ragContext.getHistorySnippets().size());
+            output.put("tmHitCount", tmHistoryCount);
+            output.put("historyFallbackCount", fallbackHistoryCount);
             output.put("buildTimeMs", ragContext.getBuildTimeMs());
             saveStep(task.getId(), 3, AgentStepTypeEnum.RETRIEVE_TERMINOLOGY, "Retrieve terminology and context",
                     "rag_service", null, buildRequestInput(request), output, AgentStepStatusEnum.SUCCESS,
@@ -160,6 +192,7 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
         output.put("translationEngine", response.getTranslationEngine());
         output.put("usedTerminology", response.getUsedTerminology());
         output.put("qualityScore", response.getQualityScore());
+        output.put("translatedText", response.getTranslatedText());
         saveStep(task.getId(), 4, AgentStepTypeEnum.TRANSLATE, "Execute translation",
                 "translation_service", response.getTranslationEngine(), buildRequestInput(request), output,
                 response.isSuccessful() ? AgentStepStatusEnum.SUCCESS : AgentStepStatusEnum.FAILED,
@@ -210,11 +243,14 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
                                        boolean tmStored) {
         AgentTask task = agentTaskRepository.findById(taskId)
                 .orElseThrow(() -> new ResourceNotFoundException("Agent task not found: " + taskId));
+        ReviewTaskCreationResult reviewTaskResult = createReviewTaskIfNeeded(task, translationResponse, qualityResponse);
+        ReviewTask reviewTask = reviewTaskResult.reviewTask();
         task.setStatus(AgentTaskStatusEnum.COMPLETED);
         task.setCurrentStep(AgentStepTypeEnum.FINALIZE.name());
         task.setFinalResponse(translationResponse.getTranslatedText());
         task.setSelectedModel(translationResponse.getTranslationEngine());
         task.setFinalQualityScore(qualityResponse != null ? qualityResponse.getOverallScore() : null);
+        task.setNeedHumanReview(reviewTask != null);
         task.setCompletedAt(LocalDateTime.now());
         agentTaskRepository.save(task);
 
@@ -225,8 +261,53 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
         output.put("tmStored", tmStored);
         output.put("tmRejectedReasons", qualityResponse != null ? qualityResponse.getTmRejectReasons() : List.of());
         output.put("needHumanReview", qualityResponse != null && Boolean.TRUE.equals(qualityResponse.getNeedsHumanReview()));
+        output.put("reviewTaskCreated", reviewTaskResult.created());
+        output.put("reviewReasonCode", reviewTask != null ? reviewTask.getReasonCode() : null);
         saveStep(taskId, 6, AgentStepTypeEnum.FINALIZE, "Finalize task", null, task.getSelectedModel(),
                 Map.of("taskId", taskId), output, AgentStepStatusEnum.SUCCESS, 0L, null);
+        agentTaskEventStreamService.publishTaskUpdate(task, reviewTask);
+        agentTaskEventStreamService.publishResult(task, reviewTask);
+        agentTaskEventStreamService.publishDone(taskId, task.getStatus());
+        agentTaskEventStreamService.completeTask(taskId);
+    }
+
+    private ReviewTaskCreationResult createReviewTaskIfNeeded(AgentTask task,
+                                                              TranslationResponse translationResponse,
+                                                              QualityAssessmentResponse qualityResponse) {
+        if (qualityResponse == null || !Boolean.TRUE.equals(qualityResponse.getNeedsHumanReview())) {
+            return new ReviewTaskCreationResult(null, false);
+        }
+
+        ReviewTask existingPending = reviewTaskRepository
+                .findFirstByAgentTaskIdAndReviewStatus(task.getId(), ReviewStatusEnum.PENDING)
+                .orElse(null);
+        if (existingPending != null) {
+            return new ReviewTaskCreationResult(existingPending, false);
+        }
+
+        String bizType = task.getBizType() != null ? task.getBizType() : "TEXT_TRANSLATION";
+        String bizId = translationResponse != null && translationResponse.getTranslationId() != null
+                ? String.valueOf(translationResponse.getTranslationId())
+                : String.valueOf(task.getId());
+        String reasonCode = resolveReviewReasonCode(qualityResponse);
+        String issueSummary = buildIssueSummary(qualityResponse);
+        String suggestedText = translationResponse != null ? translationResponse.getTranslatedText() : null;
+
+        ReviewTask reviewTask = reviewTaskService.createPendingReviewTask(
+                task.getId(),
+                bizType,
+                bizId,
+                reasonCode,
+                issueSummary,
+                suggestedText
+        );
+
+        translationRecordRepository.findFirstByAgentTaskIdOrderByCreatedAtDesc(task.getId())
+                .ifPresent(record -> {
+                    record.setReviewStatus(ReviewStatusEnum.PENDING.name());
+                    translationRecordRepository.save(record);
+                });
+        return new ReviewTaskCreationResult(reviewTask, true);
     }
 
     private boolean saveTranslationMemory(AgentTask task,
@@ -244,6 +325,7 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
                     qualityResponse != null && Boolean.TRUE.equals(qualityResponse.getHardRulePassed()),
                     qualityResponse != null && Boolean.TRUE.equals(qualityResponse.getSensitiveContentDetected()),
                     qualityResponse != null && Boolean.TRUE.equals(qualityResponse.getTmEligible()),
+                    Boolean.FALSE,
                     task.getId(),
                     task.getUserId()
             ).isPresent();
@@ -267,6 +349,9 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
         saveStep(taskId, 6, AgentStepTypeEnum.FINALIZE, "Finalize task", null, null,
                 Map.of("taskId", taskId), Map.of("status", "FAILED"),
                 AgentStepStatusEnum.FAILED, 0L, errorMessage);
+        agentTaskEventStreamService.publishTaskUpdate(task, null);
+        agentTaskEventStreamService.publishDone(taskId, task.getStatus());
+        agentTaskEventStreamService.completeTask(taskId);
     }
 
     @Transactional
@@ -274,7 +359,8 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
         AgentTask task = agentTaskRepository.findById(taskId)
                 .orElseThrow(() -> new ResourceNotFoundException("Agent task not found: " + taskId));
         task.setCurrentStep(currentStep);
-        agentTaskRepository.save(task);
+        AgentTask savedTask = agentTaskRepository.save(task);
+        agentTaskEventStreamService.publishTaskUpdate(savedTask, null);
     }
 
     @Transactional
@@ -302,7 +388,8 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
                 .durationMs(durationMs)
                 .errorMessage(errorMessage)
                 .build();
-        agentTaskStepRepository.save(step);
+        AgentTaskStep savedStep = agentTaskStepRepository.save(step);
+        agentTaskEventStreamService.publishStepUpdate(savedStep);
     }
 
     private Map<String, Object> buildRequestInput(TranslationRequest request) {
@@ -361,5 +448,30 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
             return e.getMessage();
         }
         return e.getClass().getSimpleName();
+    }
+
+    private String resolveReviewReasonCode(QualityAssessmentResponse qualityResponse) {
+        if (qualityResponse == null) {
+            return "MANUAL_REVIEW_REQUIRED";
+        }
+        if (Boolean.TRUE.equals(qualityResponse.getSensitiveContentDetected())) {
+            return "SENSITIVE_CONTENT";
+        }
+        if (qualityResponse.getTmRejectReasons() != null && !qualityResponse.getTmRejectReasons().isEmpty()) {
+            return qualityResponse.getTmRejectReasons().get(0);
+        }
+        return "MANUAL_REVIEW_REQUIRED";
+    }
+
+    private String buildIssueSummary(QualityAssessmentResponse qualityResponse) {
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("overallScore", qualityResponse != null ? qualityResponse.getOverallScore() : null);
+        summary.put("qualityLevel", qualityResponse != null ? qualityResponse.getQualityLevel() : null);
+        summary.put("tmRejectReasons", qualityResponse != null ? qualityResponse.getTmRejectReasons() : List.of());
+        summary.put("sensitiveContentDetected", qualityResponse != null && Boolean.TRUE.equals(qualityResponse.getSensitiveContentDetected()));
+        return toJson(summary);
+    }
+
+    private record ReviewTaskCreationResult(ReviewTask reviewTask, boolean created) {
     }
 }
