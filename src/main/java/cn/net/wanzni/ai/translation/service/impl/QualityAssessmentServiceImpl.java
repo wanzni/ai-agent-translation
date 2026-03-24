@@ -9,49 +9,141 @@ import cn.net.wanzni.ai.translation.service.QualityAssessmentService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.http.HttpStatusCode;
 import reactor.core.publisher.Mono;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-/**
- * 翻译质量评估服务接口，提供对翻译结果进行质量评估的功能。
- */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class QualityAssessmentServiceImpl implements QualityAssessmentService {
 
+    private static final int TM_MIN_OVERALL_SCORE = 80;
+    private static final Pattern NUMBER_PATTERN = Pattern.compile("\\d+(?:\\.\\d+)?");
+    private static final Pattern NUMBER_WITH_UNIT_PATTERN = Pattern.compile("(?i)\\d+(?:\\.\\d+)?\\s*([a-zA-Z%$￥]+)");
+    private static final Pattern LATIN_PROPER_NOUN_PATTERN = Pattern.compile("\\b[A-Z][A-Za-z0-9_-]{1,}\\b");
+    private static final Pattern URL_PATTERN = Pattern.compile("https?://\\S+");
+    private static final Pattern EMAIL_PATTERN = Pattern.compile("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}");
+    private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("(\\{\\{[^{}]+}}|\\$\\{[^{}]+}|%s|%d|\\{\\d+})");
+    private static final Pattern INLINE_CODE_PATTERN = Pattern.compile("`[^`]+`");
+    private static final Set<String> COMMON_UNITS = Set.of(
+            "ms", "sec", "seconds", "minute", "minutes", "hour", "hours",
+            "kb", "mb", "gb", "tb", "%", "px", "cm", "mm", "kg", "km",
+            "usd", "rmb", "cny", "￥", "$"
+    );
+    private static final Set<String> SENSITIVE_TERMS = Set.of(
+            "violence", "weapon", "kill", "bomb", "terror", "drug", "porn",
+            "blood", "suicide", "extremist", "hack", "attack",
+            "暴力", "血腥", "炸弹", "毒品", "色情", "恐怖", "极端", "自杀", "攻击"
+    );
+    private static final Set<String> NON_PROPER_NOUN_CAPITALIZED_WORDS = Set.of(
+            "The", "This", "That", "These", "Those", "A", "An", "And", "But", "For", "With", "Without"
+    );
+
     private final DashscopeProperties properties;
     private final QualityAssessmentRepository repository;
-    private final WebClient webClient = WebClient.builder().build();
     private final ObjectMapper objectMapper;
+    private final WebClient webClient = WebClient.builder().build();
 
-    /**
-     * 对翻译结果进行质量评估。
-     *
-     * @param request 质量评估请求，包含源文、译文等信息
-     * @return 质量评估结果
-     * @throws Exception 评估过程中发生的异常
-     */
     @Override
     @SuppressWarnings("unchecked")
     public QualityAssessmentResponse assess(QualityAssessmentRequest request) throws Exception {
         long start = System.currentTimeMillis();
 
+        RuleCheckResult ruleCheckResult = evaluateRules(request);
+        Map<String, Object> json = resolveModelOrHeuristicResult(request);
+
+        int acc = toScore(json.get("accuracyScore"));
+        int flu = toScore(json.get("fluencyScore"));
+        int con = toScore(json.get("consistencyScore"));
+        int comp = toScore(json.get("completenessScore"));
+        int overall = json.containsKey("overallScore")
+                ? toScore(json.get("overallScore"))
+                : (int) Math.round(acc * 0.4 + flu * 0.3 + con * 0.2 + comp * 0.1);
+
+        List<String> suggestions = extractSuggestions(json);
+        List<String> attention = extractList(json, "attentionPoints");
+        List<String> pros = extractList(json, "strengths");
+
+        if (suggestions.isEmpty() && overall < 85) {
+            suggestions = generateHeuristicSuggestions(acc, flu, con, comp);
+        }
+        if (attention.isEmpty()) {
+            attention = generateDefaultAttentionPoints();
+        }
+        if (pros.isEmpty()) {
+            pros = generateDefaultStrengths();
+        }
+
+        List<String> tmRejectReasons = new ArrayList<>(ruleCheckResult.rejectReasons());
+        if (overall < TM_MIN_OVERALL_SCORE) {
+            tmRejectReasons.add("LOW_OVERALL_SCORE");
+        }
+
+        boolean hardRulePassed = ruleCheckResult.hardRulePassed();
+        boolean sensitiveContentDetected = ruleCheckResult.sensitiveContentDetected();
+        boolean tmEligible = overall >= TM_MIN_OVERALL_SCORE && hardRulePassed && !sensitiveContentDetected;
+        boolean needsHumanReview = sensitiveContentDetected;
+        boolean needsRetry = !hardRulePassed && !sensitiveContentDetected;
+        long cost = System.currentTimeMillis() - start;
+
+        Map<String, Object> assessmentDetails = new LinkedHashMap<>((Map<String, Object>) json.getOrDefault("assessmentDetails", Map.of()));
+        assessmentDetails.put("ruleCheck", ruleCheckResult.details());
+
+        QualityAssessmentResponse response = QualityAssessmentResponse.builder()
+                .overallScore(overall)
+                .accuracyScore(acc)
+                .fluencyScore(flu)
+                .consistencyScore(con)
+                .completenessScore(comp)
+                .improvementSuggestions(suggestions)
+                .attentionPoints(attention)
+                .strengths(pros)
+                .assessmentDetails(assessmentDetails)
+                .assessmentTime(cost)
+                .assessmentEngine("QWEN")
+                .qualityLevel(qualityLevel(overall))
+                .numberScore(ruleCheckResult.numberScore())
+                .terminologyScore(ruleCheckResult.terminologyScore())
+                .formatScore(ruleCheckResult.formatScore())
+                .llmJudgeScore(overall)
+                .needsHumanReview(needsHumanReview)
+                .needsRetry(needsRetry)
+                .tmEligible(tmEligible)
+                .hardRulePassed(hardRulePassed)
+                .sensitiveContentDetected(sensitiveContentDetected)
+                .tmRejectReasons(List.copyOf(new LinkedHashSet<>(tmRejectReasons)))
+                .build();
+
+        if (request.isSave() && request.getTranslationRecordId() != null) {
+            saveQualityAssessmentEntity(request, response, cost);
+        }
+
+        return response;
+    }
+
+    private Map<String, Object> resolveModelOrHeuristicResult(QualityAssessmentRequest request) throws Exception {
         if (!StringUtils.hasText(properties.getApiKey())) {
-            throw new IllegalStateException("DashScope API Key 未配置，请在 ai.dashscope.api-key 中设置");
+            return buildHeuristicEvaluation(request.getSourceText(), request.getTargetText());
         }
 
         String systemPrompt = buildSystemPrompt(request.getTargetLanguage());
-
         String userPrompt = "Source Language: " + (StringUtils.hasText(request.getSourceLanguage()) ? request.getSourceLanguage() : "auto") +
                 "\nTarget Language: " + request.getTargetLanguage() +
                 "\n\nSource Text:\n" + request.getSourceText() +
@@ -70,121 +162,308 @@ public class QualityAssessmentServiceImpl implements QualityAssessmentService {
 
         String content;
         try {
-            String url = properties.getBaseUrl();
             Map<String, Object> resp = webClient.post()
-                    .uri(url)
+                    .uri(properties.getBaseUrl())
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_JSON)
                     .header("Authorization", "Bearer " + properties.getApiKey())
                     .bodyValue(body)
                     .retrieve()
                     .onStatus(HttpStatusCode::is4xxClientError, (ClientResponse r) ->
-                            r.bodyToMono(String.class).flatMap(errBody -> {
-                                log.error("DashScope 4xx 响应: status={}, body={}", r.statusCode(), errBody);
-                                return Mono.error(new RuntimeException("DashScope 4xx: " + r.statusCode() + " - " + errBody));
-                            }))
+                            r.bodyToMono(String.class).flatMap(errBody ->
+                                    Mono.error(new RuntimeException("DashScope 4xx: " + r.statusCode() + " - " + errBody))))
                     .onStatus(HttpStatusCode::is5xxServerError, (ClientResponse r) ->
-                            r.bodyToMono(String.class).flatMap(errBody -> {
-                                log.error("DashScope 5xx 响应: status={}, body={}", r.statusCode(), errBody);
-                                return Mono.error(new RuntimeException("DashScope 5xx: " + r.statusCode() + " - " + errBody));
-                            }))
+                            r.bodyToMono(String.class).flatMap(errBody ->
+                                    Mono.error(new RuntimeException("DashScope 5xx: " + r.statusCode() + " - " + errBody))))
                     .bodyToMono(Map.class)
-                    .onErrorResume(err -> {
-                        log.error("DashScope 调用异常: {}", err.getMessage(), err);
-                        return Mono.error(err);
-                    })
                     .block();
-
             content = extractContent(resp);
         } catch (Exception apiError) {
-            // API失败时，使用启发式评估，确保前端仍可获得建议
-            log.warn("使用启发式质量评估（API失败）: {}", apiError.getMessage());
-            Map<String, Object> heuristic = buildHeuristicEvaluation(request.getSourceText(), request.getTargetText());
-            content = safeToJson(heuristic);
+            log.warn("Fallback to heuristic quality evaluation: {}", apiError.getMessage());
+            return buildHeuristicEvaluation(request.getSourceText(), request.getTargetText());
         }
-        long cost = System.currentTimeMillis() - start;
 
-        Map<String, Object> json;
         try {
-            json = objectMapper.readValue(content, Map.class);
+            return objectMapper.readValue(content, Map.class);
         } catch (Exception e) {
-            log.warn("评估结果解析失败，返回原始文本: {}", content);
-            // 提供一个合理的退路，避免前端崩溃
-            json = Map.of(
-                    "overallScore", 75,
-                    "accuracyScore", 78,
-                    "fluencyScore", 80,
-                    "consistencyScore", 74,
-                    "completenessScore", 76,
-                    "improvementSuggestions", List.of("术语使用需更一致", "部分句子结构可更自然"),
-                    "attentionPoints", List.of("专有名词核对", "避免逐字直译"),
-                    "strengths", List.of("整体可读性良好", "信息基本完整"),
-                    "assessmentDetails", Map.of("note", "fallback due to parse error")
-            );
+            log.warn("Quality assessment parse failed, fallback to heuristic result: {}", content);
+            return buildHeuristicEvaluation(request.getSourceText(), request.getTargetText());
+        }
+    }
+
+    private void saveQualityAssessmentEntity(QualityAssessmentRequest request,
+                                             QualityAssessmentResponse response,
+                                             long cost) {
+        try {
+            QualityAssessment entity = QualityAssessment.builder()
+                    .translationRecordId(request.getTranslationRecordId())
+                    .assessmentMode(QualityAssessment.AssessmentMode.AUTOMATIC)
+                    .overallScore(response.getOverallScore())
+                    .accuracyScore(response.getAccuracyScore())
+                    .fluencyScore(response.getFluencyScore())
+                    .consistencyScore(response.getConsistencyScore())
+                    .completenessScore(response.getCompletenessScore())
+                    .improvementSuggestions(safeToJson(response.getImprovementSuggestions()))
+                    .attentionPoints(safeToJson(response.getAttentionPoints()))
+                    .strengths(safeToJson(response.getStrengths()))
+                    .assessmentDetails(safeToJson(response.getAssessmentDetails()))
+                    .assessmentTime(cost)
+                    .assessmentEngine(response.getAssessmentEngine())
+                    .terminologyScore(response.getTerminologyScore())
+                    .numberScore(response.getNumberScore())
+                    .formatScore(response.getFormatScore())
+                    .llmJudgeScore(response.getLlmJudgeScore())
+                    .needsRetry(Boolean.TRUE.equals(response.getNeedsRetry()))
+                    .needsHumanReview(Boolean.TRUE.equals(response.getNeedsHumanReview()))
+                    .isManualAssessment(false)
+                    .assessorId(null)
+                    .build();
+            repository.save(entity);
+        } catch (Exception e) {
+            log.error("Save quality assessment failed: {}", e.getMessage(), e);
+        }
+    }
+
+    private RuleCheckResult evaluateRules(QualityAssessmentRequest request) {
+        List<String> rejectReasons = new ArrayList<>();
+        Map<String, Object> details = new LinkedHashMap<>();
+
+        int numberScore = evaluateNumberAndUnitScore(request.getSourceText(), request.getTargetText(), details, rejectReasons);
+        int terminologyScore = evaluateTerminologyScore(request.getSourceText(), request.getTargetText(), request.getGlossaryMap(), details, rejectReasons);
+        int formatScore = evaluateFormatScore(request.getSourceText(), request.getTargetText(), details);
+        boolean sensitiveContentDetected = containsSensitiveContent(request.getSourceText()) || containsSensitiveContent(request.getTargetText());
+        if (sensitiveContentDetected) {
+            rejectReasons.add("SENSITIVE_CONTENT");
+        }
+        details.put("sensitiveContentDetected", sensitiveContentDetected);
+
+        boolean hardRulePassed = numberScore >= 100 && terminologyScore >= 100;
+        return new RuleCheckResult(
+                numberScore,
+                terminologyScore,
+                formatScore,
+                hardRulePassed,
+                sensitiveContentDetected,
+                List.copyOf(new LinkedHashSet<>(rejectReasons)),
+                details
+        );
+    }
+
+    private int evaluateNumberAndUnitScore(String sourceText,
+                                           String targetText,
+                                           Map<String, Object> details,
+                                           List<String> rejectReasons) {
+        List<String> sourceNumbers = sortValues(extractMatches(sourceText, NUMBER_PATTERN));
+        List<String> targetNumbers = sortValues(extractMatches(targetText, NUMBER_PATTERN));
+        List<String> sourceUnits = extractUnits(sourceText);
+        List<String> targetUnits = extractUnits(targetText);
+
+        boolean numbersMatch = sourceNumbers.equals(targetNumbers);
+        boolean unitsMatch = targetUnits.containsAll(sourceUnits);
+        details.put("sourceNumbers", sourceNumbers);
+        details.put("targetNumbers", targetNumbers);
+        details.put("sourceUnits", sourceUnits);
+        details.put("targetUnits", targetUnits);
+        details.put("numbersMatch", numbersMatch);
+        details.put("unitsMatch", unitsMatch);
+
+        if (!numbersMatch || !unitsMatch) {
+            rejectReasons.add("NUMBER_OR_UNIT_MISMATCH");
+            return 0;
+        }
+        return 100;
+    }
+
+    private int evaluateFormatScore(String sourceText,
+                                    String targetText,
+                                    Map<String, Object> details) {
+        Map<String, Object> formatCheck = new LinkedHashMap<>();
+        List<String> failedChecks = new ArrayList<>();
+
+        comparePatternCounts("url", sourceText, targetText, URL_PATTERN, formatCheck, failedChecks);
+        comparePatternCounts("email", sourceText, targetText, EMAIL_PATTERN, formatCheck, failedChecks);
+        comparePatternCounts("placeholder", sourceText, targetText, PLACEHOLDER_PATTERN, formatCheck, failedChecks);
+        comparePatternCounts("inlineCode", sourceText, targetText, INLINE_CODE_PATTERN, formatCheck, failedChecks);
+        compareCount("newline", countNewlines(sourceText), countNewlines(targetText), formatCheck, failedChecks);
+        compareBalancedDelimiter("parentheses", sourceText, targetText, '(', ')', formatCheck, failedChecks);
+        compareBalancedDelimiter("squareBrackets", sourceText, targetText, '[', ']', formatCheck, failedChecks);
+        compareBalancedDelimiter("curlyBraces", sourceText, targetText, '{', '}', formatCheck, failedChecks);
+        compareCount("doubleQuotes", countChar(sourceText, '"'), countChar(targetText, '"'), formatCheck, failedChecks);
+
+        formatCheck.put("failedChecks", failedChecks);
+        details.put("formatCheck", formatCheck);
+
+        int score = Math.max(0, 100 - failedChecks.size() * 20);
+        formatCheck.put("score", score);
+        return score;
+    }
+
+    private int evaluateTerminologyScore(String sourceText,
+                                         String targetText,
+                                         Map<String, String> glossaryMap,
+                                         Map<String, Object> details,
+                                         List<String> rejectReasons) {
+        List<String> missingTargets = new ArrayList<>();
+        if (glossaryMap != null && !glossaryMap.isEmpty()) {
+            glossaryMap.forEach((sourceTerm, targetTerm) -> {
+                if (StringUtils.hasText(sourceTerm) && StringUtils.hasText(targetTerm)
+                        && sourceText != null && sourceText.contains(sourceTerm)
+                        && (targetText == null || !targetText.contains(targetTerm))) {
+                    missingTargets.add(targetTerm);
+                }
+            });
         }
 
-        int acc = toScore(json.get("accuracyScore"));
-        int flu = toScore(json.get("fluencyScore"));
-        int con = toScore(json.get("consistencyScore"));
-        int comp = toScore(json.get("completenessScore"));
-        int overall = json.containsKey("overallScore") ? toScore(json.get("overallScore"))
-                : (int) Math.round(acc * 0.4 + flu * 0.3 + con * 0.2 + comp * 0.1);
+        List<String> sourceProperNouns = extractProperNouns(sourceText);
+        List<String> missingProperNouns = sourceProperNouns.stream()
+                .filter(properNoun -> !containsIgnoreCase(targetText, properNoun))
+                .collect(java.util.stream.Collectors.toList());
 
-        List<String> suggestions = extractSuggestions(json);
-        List<String> attention = extractList(json, "attentionPoints");
-        List<String> pros = extractList(json, "strengths");
+        details.put("missingGlossaryTargets", missingTargets);
+        details.put("missingProperNouns", missingProperNouns);
+        details.put("sourceProperNouns", sourceProperNouns);
 
-        if ((suggestions == null || suggestions.isEmpty()) && overall < 85) {
-            suggestions = generateHeuristicSuggestions(acc, flu, con, comp);
+        if (!missingTargets.isEmpty() || !missingProperNouns.isEmpty()) {
+            rejectReasons.add("TERMINOLOGY_OR_PROPER_NOUN_MISMATCH");
+            return 0;
         }
-        if (attention == null || attention.isEmpty()) {
-            attention = generateDefaultAttentionPoints();
-        }
-        if (pros == null || pros.isEmpty()) {
-            pros = generateDefaultStrengths();
-        }
+        return 100;
+    }
 
-        QualityAssessmentResponse response = QualityAssessmentResponse.builder()
-                .overallScore(overall)
-                .accuracyScore(acc)
-                .fluencyScore(flu)
-                .consistencyScore(con)
-                .completenessScore(comp)
-                .improvementSuggestions(suggestions)
-                .attentionPoints(attention)
-                .strengths(pros)
-                .assessmentDetails((Map<String, Object>) json.getOrDefault("assessmentDetails", Map.of()))
-                .assessmentTime(cost)
-                .assessmentEngine("QWEN")
-                .qualityLevel(qualityLevel(overall))
-                .build();
+    private boolean containsSensitiveContent(String text) {
+        if (!StringUtils.hasText(text)) {
+            return false;
+        }
+        String normalized = text.toLowerCase(Locale.ROOT);
+        return SENSITIVE_TERMS.stream().anyMatch(normalized::contains);
+    }
 
-        if (request.isSave() && request.getTranslationRecordId() != null) {
-            try {
-                QualityAssessment entity = QualityAssessment.builder()
-                        .translationRecordId(request.getTranslationRecordId())
-                        .assessmentMode(QualityAssessment.AssessmentMode.AUTOMATIC)
-                        .overallScore(overall)
-                        .accuracyScore(acc)
-                        .fluencyScore(flu)
-                        .consistencyScore(con)
-                        .completenessScore(comp)
-                        .improvementSuggestions(safeToJson(response.getImprovementSuggestions()))
-                        .attentionPoints(safeToJson(response.getAttentionPoints()))
-                        .strengths(safeToJson(response.getStrengths()))
-                        .assessmentDetails(safeToJson(response.getAssessmentDetails()))
-                        .assessmentTime(cost)
-                        .assessmentEngine("QWEN")
-                        .isManualAssessment(false)
-                        .assessorId(null)
-                        .build();
-                repository.save(entity);
-            } catch (Exception e) {
-                log.error("保存质量评估失败: {}", e.getMessage(), e);
+    private void comparePatternCounts(String key,
+                                      String sourceText,
+                                      String targetText,
+                                      Pattern pattern,
+                                      Map<String, Object> formatCheck,
+                                      List<String> failedChecks) {
+        List<String> sourceMatches = extractMatches(sourceText, pattern);
+        List<String> targetMatches = extractMatches(targetText, pattern);
+        formatCheck.put(key + "Source", sourceMatches);
+        formatCheck.put(key + "Target", targetMatches);
+        if (sourceMatches.size() != targetMatches.size()) {
+            failedChecks.add(key.toUpperCase(Locale.ROOT) + "_COUNT_MISMATCH");
+        }
+    }
+
+    private void compareCount(String key,
+                              int sourceCount,
+                              int targetCount,
+                              Map<String, Object> formatCheck,
+                              List<String> failedChecks) {
+        formatCheck.put(key + "SourceCount", sourceCount);
+        formatCheck.put(key + "TargetCount", targetCount);
+        if (sourceCount != targetCount) {
+            failedChecks.add(key.toUpperCase(Locale.ROOT) + "_COUNT_MISMATCH");
+        }
+    }
+
+    private void compareBalancedDelimiter(String key,
+                                          String sourceText,
+                                          String targetText,
+                                          char open,
+                                          char close,
+                                          Map<String, Object> formatCheck,
+                                          List<String> failedChecks) {
+        int sourceBalance = countChar(sourceText, open) - countChar(sourceText, close);
+        int targetBalance = countChar(targetText, open) - countChar(targetText, close);
+        int sourcePairCount = Math.min(countChar(sourceText, open), countChar(sourceText, close));
+        int targetPairCount = Math.min(countChar(targetText, open), countChar(targetText, close));
+        formatCheck.put(key + "SourceBalance", sourceBalance);
+        formatCheck.put(key + "TargetBalance", targetBalance);
+        formatCheck.put(key + "SourcePairCount", sourcePairCount);
+        formatCheck.put(key + "TargetPairCount", targetPairCount);
+        if (sourceBalance != targetBalance || sourcePairCount != targetPairCount) {
+            failedChecks.add(key.toUpperCase(Locale.ROOT) + "_STRUCTURE_MISMATCH");
+        }
+    }
+
+    private List<String> extractMatches(String text, Pattern pattern) {
+        if (!StringUtils.hasText(text)) {
+            return List.of();
+        }
+        List<String> matches = new ArrayList<>();
+        Matcher matcher = pattern.matcher(text);
+        while (matcher.find()) {
+            matches.add(matcher.group());
+        }
+        return matches;
+    }
+
+    private int countNewlines(String text) {
+        return countChar(text, '\n');
+    }
+
+    private int countChar(String text, char target) {
+        if (!StringUtils.hasText(text)) {
+            return 0;
+        }
+        int count = 0;
+        for (int i = 0; i < text.length(); i++) {
+            if (text.charAt(i) == target) {
+                count++;
             }
         }
+        return count;
+    }
 
-        return response;
+    private List<String> extractProperNouns(String text) {
+        return extractMatches(text, LATIN_PROPER_NOUN_PATTERN).stream()
+                .filter(token -> !NON_PROPER_NOUN_CAPITALIZED_WORDS.contains(token))
+                .filter(token -> token.equals(token.toUpperCase(Locale.ROOT))
+                        || token.chars().anyMatch(Character::isDigit)
+                        || hasInnerCapital(token))
+                .distinct()
+                .toList();
+    }
+
+    private List<String> sortValues(List<String> values) {
+        return values.stream().sorted().toList();
+    }
+
+    private boolean hasInnerCapital(String token) {
+        for (int i = 1; i < token.length(); i++) {
+            if (Character.isUpperCase(token.charAt(i))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private List<String> extractUnits(String text) {
+        if (!StringUtils.hasText(text)) {
+            return List.of();
+        }
+        Set<String> units = new LinkedHashSet<>();
+        Matcher matcher = NUMBER_WITH_UNIT_PATTERN.matcher(text);
+        while (matcher.find()) {
+            String unit = matcher.group(1).toLowerCase(Locale.ROOT);
+            if (COMMON_UNITS.contains(unit)) {
+                units.add(unit);
+            }
+        }
+        if (text.contains("%")) {
+            units.add("%");
+        }
+        if (text.contains("￥")) {
+            units.add("￥");
+        }
+        if (text.contains("$")) {
+            units.add("$");
+        }
+        return List.copyOf(units);
+    }
+
+    private boolean containsIgnoreCase(String text, String target) {
+        return StringUtils.hasText(text) && StringUtils.hasText(target)
+                && text.toLowerCase(Locale.ROOT).contains(target.toLowerCase(Locale.ROOT));
     }
 
     @SuppressWarnings("unchecked")
@@ -213,12 +492,6 @@ public class QualityAssessmentServiceImpl implements QualityAssessmentService {
         return "{}";
     }
 
-    /**
-     * Converts an object to a score.
-     *
-     * @param v the object to convert
-     * @return the score
-     */
     private int toScore(Object v) {
         if (v == null) return 0;
         int s;
@@ -232,26 +505,14 @@ public class QualityAssessmentServiceImpl implements QualityAssessmentService {
         return s;
     }
 
-    /**
-     * Returns the quality level for a given score.
-     *
-     * @param overall the overall score
-     * @return the quality level
-     */
     private String qualityLevel(int overall) {
-        if (overall >= 90) return "优秀";
-        if (overall >= 80) return "良好";
-        if (overall >= 70) return "中等";
-        if (overall >= 60) return "及格";
-        return "需要改进";
+        if (overall >= 90) return "浼樼";
+        if (overall >= 80) return "鑹ソ";
+        if (overall >= 70) return "涓瓑";
+        if (overall >= 60) return "鍙婃牸";
+        return "闇€瑕佹敼杩?";
     }
 
-    /**
-     * Safely converts an object to a JSON string.
-     *
-     * @param obj the object to convert
-     * @return the JSON string
-     */
     private String safeToJson(Object obj) {
         try {
             return objectMapper.writeValueAsString(obj);
@@ -260,16 +521,10 @@ public class QualityAssessmentServiceImpl implements QualityAssessmentService {
         }
     }
 
-    /**
-     * Builds the system prompt for the quality assessment.
-     *
-     * @param targetLang the target language
-     * @return the system prompt
-     */
     private String buildSystemPrompt(String targetLang) {
-        boolean zh = StringUtils.hasText(targetLang) && targetLang.toLowerCase().startsWith("zh");
+        boolean zh = StringUtils.hasText(targetLang) && targetLang.toLowerCase(Locale.ROOT).startsWith("zh");
         String languageDirective = zh
-                ? "All textual fields MUST be written in Simplified Chinese (简体中文), including improvementSuggestions, attentionPoints, strengths, and assessmentDetails."
+                ? "All textual fields MUST be written in Simplified Chinese, including improvementSuggestions, attentionPoints, strengths, and assessmentDetails."
                 : "Use the target language for textual fields. If target language is Chinese, use Simplified Chinese.";
 
         return "You are a professional translation quality evaluator. " +
@@ -280,13 +535,6 @@ public class QualityAssessmentServiceImpl implements QualityAssessmentService {
                 "All scores must be integers in [0,100]. Do not include any commentary or markdown.";
     }
 
-    /**
-     * Builds a heuristic evaluation.
-     *
-     * @param src the source text
-     * @param tgt the target text
-     * @return the heuristic evaluation
-     */
     private Map<String, Object> buildHeuristicEvaluation(String src, String tgt) {
         int srcLen = src != null ? src.length() : 0;
         int tgtLen = tgt != null ? tgt.length() : 0;
@@ -302,119 +550,83 @@ public class QualityAssessmentServiceImpl implements QualityAssessmentService {
 
         int overall = (int) Math.round(acc * 0.4 + flu * 0.3 + con * 0.2 + comp * 0.1);
 
-        List<String> suggestions = generateHeuristicSuggestions(acc, flu, con, comp);
-        List<String> attention = generateDefaultAttentionPoints();
-        List<String> pros = generateDefaultStrengths();
-
         Map<String, Object> details = new HashMap<>();
         details.put("lengthRatio", lenRatio);
         details.put("note", "heuristic-evaluation");
 
-        Map<String, Object> m = new HashMap<>();
-        m.put("overallScore", overall);
-        m.put("accuracyScore", acc);
-        m.put("fluencyScore", flu);
-        m.put("consistencyScore", con);
-        m.put("completenessScore", comp);
-        m.put("improvementSuggestions", suggestions);
-        m.put("attentionPoints", attention);
-        m.put("strengths", pros);
-        m.put("assessmentDetails", details);
-        return m;
+        Map<String, Object> result = new HashMap<>();
+        result.put("overallScore", overall);
+        result.put("accuracyScore", acc);
+        result.put("fluencyScore", flu);
+        result.put("consistencyScore", con);
+        result.put("completenessScore", comp);
+        result.put("improvementSuggestions", generateHeuristicSuggestions(acc, flu, con, comp));
+        result.put("attentionPoints", generateDefaultAttentionPoints());
+        result.put("strengths", generateDefaultStrengths());
+        result.put("assessmentDetails", details);
+        return result;
     }
 
-    /**
-     * Extracts suggestions from a JSON object.
-     *
-     * @param json the JSON object
-     * @return the list of suggestions
-     */
-    @SuppressWarnings("unchecked")
     private List<String> extractSuggestions(Map<String, Object> json) {
         if (json == null) return List.of();
         for (String key : List.of("improvementSuggestions", "suggestions", "improvements", "recommendations", "advice")) {
             if (json.containsKey(key)) {
-                Object v = json.get(key);
-                List<String> list = toStringList(v);
-                if (list != null && !list.isEmpty()) return list;
+                List<String> list = toStringList(json.get(key));
+                if (!list.isEmpty()) {
+                    return list;
+                }
             }
         }
         return List.of();
     }
 
-    /**
-     * Extracts a list of strings from a JSON object.
-     *
-     * @param json the JSON object
-     * @param key the key
-     * @return the list of strings
-     */
-    @SuppressWarnings("unchecked")
     private List<String> extractList(Map<String, Object> json, String key) {
         if (json == null || key == null) return List.of();
-        Object v = json.get(key);
-        List<String> list = toStringList(v);
-        return list != null ? list : List.of();
+        return toStringList(json.get(key));
     }
 
-    /**
-     * Converts an object to a list of strings.
-     *
-     * @param v the object to convert
-     * @return the list of strings
-     */
-    @SuppressWarnings("unchecked")
     private List<String> toStringList(Object v) {
         if (v == null) return List.of();
         try {
-            if (v instanceof List<?> l) {
-                return l.stream().map(String::valueOf).map(String::trim).filter(s -> !s.isEmpty()).toList();
-            } else if (v instanceof String s) {
+            if (v instanceof Collection<?> collection) {
+                return collection.stream().map(String::valueOf).map(String::trim).filter(StringUtils::hasText).toList();
+            }
+            if (v instanceof String s) {
                 String t = s.trim();
                 if (t.startsWith("[") && t.endsWith("]")) {
                     return objectMapper.readValue(t, objectMapper.getTypeFactory().constructCollectionType(List.class, String.class));
                 }
-                return List.of(t);
+                return StringUtils.hasText(t) ? List.of(t) : List.of();
             }
         } catch (Exception ignored) {
         }
         return List.of();
     }
 
-    /**
-     * Generates heuristic suggestions.
-     *
-     * @param acc the accuracy score
-     * @param flu the fluency score
-     * @param con the consistency score
-     * @param comp the completeness score
-     * @return the list of suggestions
-     */
     private List<String> generateHeuristicSuggestions(int acc, int flu, int con, int comp) {
-        List<String> s = new java.util.ArrayList<>();
-        if (acc < 85) s.add("提高准确性：核对术语与专有名词，避免误译");
-        if (flu < 85) s.add("提升流畅性：优化句子结构与连接词，避免直译感");
-        if (con < 85) s.add("增强一致性：统一术语与表述，保持风格一致");
-        if (comp < 85) s.add("补充完整性：确保信息不遗漏，补足上下文细节");
-        if (s.isEmpty()) s.add("参考目标语言惯用表达，整体润色提升可读性");
-        return s;
+        List<String> suggestions = new ArrayList<>();
+        if (acc < 85) suggestions.add("提高准确性：核对术语、专有名词和关键信息");
+        if (flu < 85) suggestions.add("提升流畅性：优化句式与连接表达");
+        if (con < 85) suggestions.add("增强一致性：保持术语和表达风格统一");
+        if (comp < 85) suggestions.add("补足完整性：避免漏译与格式信息丢失");
+        if (suggestions.isEmpty()) suggestions.add("整体质量较好，可继续按目标语习惯润色");
+        return suggestions;
     }
 
-    /**
-     * Generates default attention points.
-     *
-     * @return the list of attention points
-     */
     private List<String> generateDefaultAttentionPoints() {
         return List.of("专有名词核对", "避免逐字直译", "数字与单位格式一致");
     }
 
-    /**
-     * Generates default strengths.
-     *
-     * @return the list of strengths
-     */
     private List<String> generateDefaultStrengths() {
-        return List.of("整体可读性良好", "信息基本完整", "语义传达基本准确");
+        return List.of("整体可读性良好", "信息基本完整", "语义传达较为清晰");
+    }
+
+    private record RuleCheckResult(int numberScore,
+                                   int terminologyScore,
+                                   int formatScore,
+                                   boolean hardRulePassed,
+                                   boolean sensitiveContentDetected,
+                                   List<String> rejectReasons,
+                                   Map<String, Object> details) {
     }
 }

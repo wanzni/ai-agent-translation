@@ -115,6 +115,37 @@ public class TranslationRecord {
     private String errorMessage;
 
     /**
+     * 关联的 Agent 任务ID
+     */
+    @Column(name = "agent_task_id")
+    private Long agentTaskId;
+
+    /**
+     * 本次翻译命中的 TM 数量
+     */
+    @Column(name = "tm_hit_count")
+    @Builder.Default
+    private Integer tmHitCount = 0;
+
+    /**
+     * 工作流工具链路信息
+     */
+    @Column(name = "tool_trace_json", columnDefinition = "LONGTEXT")
+    private String toolTraceJson;
+
+    /**
+     * 实际路由使用的模型
+     */
+    @Column(name = "route_model", length = 64)
+    private String routeModel;
+
+    /**
+     * 人工复核状态
+     */
+    @Column(name = "review_status", length = 32)
+    private String reviewStatus;
+
+    /**
      * 创建时间
      */
     @CreationTimestamp

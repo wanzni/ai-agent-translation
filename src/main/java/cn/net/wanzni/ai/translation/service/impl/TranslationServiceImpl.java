@@ -16,6 +16,7 @@ import cn.net.wanzni.ai.translation.service.TranslationService;
 import cn.net.wanzni.ai.translation.service.llm.RagService;
 import cn.net.wanzni.ai.translation.service.translation.AliyunTranslationService;
 import cn.net.wanzni.ai.translation.service.translation.QwenTranslationService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -49,6 +50,7 @@ public class TranslationServiceImpl implements TranslationService {
     private final PointsService pointsService;
     private final MembershipService membershipService;
     private final PointsProperties pointsProperties;
+    private final ObjectMapper objectMapper;
 
     // Mock支持的语言列表
     private static final Map<String, String> SUPPORTED_LANGUAGES = Map.of(
@@ -218,7 +220,8 @@ public class TranslationServiceImpl implements TranslationService {
             if (response.isSuccessful()) {
                 TranslationRecord record = createTranslationRecord(request, response.getTranslatedText(),
                         response.getProcessingTime() != null ? response.getProcessingTime() : (System.currentTimeMillis() - startTime));
-                translationRecordRepository.save(record);
+                TranslationRecord savedRecord = translationRecordRepository.save(record);
+                response.setTranslationId(savedRecord.getId());
             }
             
             return response;
@@ -663,8 +666,10 @@ public class TranslationServiceImpl implements TranslationService {
      * @return 翻译记录
      */
     private TranslationRecord createTranslationRecord(TranslationRequest request, String translatedText, long processingTime) {
+        int tmHitCount = resolveTmHitCount(request.getRagContext());
         return TranslationRecord.builder()
                 .userId(request.getUserId())
+                .agentTaskId(request.getAgentTaskId())
                 .sourceLanguage(request.getSourceLanguage())
                 .targetLanguage(request.getTargetLanguage())
                 .sourceText(request.getSourceText())
@@ -675,10 +680,37 @@ public class TranslationServiceImpl implements TranslationService {
                 .processingTime(processingTime)
                 .characterCount(request.getCharacterCount())
                 .useTerminology(request.getUseTerminology())
+                .tmHitCount(tmHitCount)
+                .routeModel(request.getTranslationEngine())
+                .toolTraceJson(buildToolTraceJson(request, tmHitCount))
                 .status(TranslationRecord.TranslationStatus.COMPLETED)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
+    }
+
+    private int resolveTmHitCount(Map<String, Object> ragContext) {
+        if (ragContext == null) {
+            return 0;
+        }
+        Object historySnippets = ragContext.get("historySnippets");
+        if (historySnippets instanceof Collection<?> collection) {
+            return collection.size();
+        }
+        return 0;
+    }
+
+    private String buildToolTraceJson(TranslationRequest request, int tmHitCount) {
+        Map<String, Object> trace = new LinkedHashMap<>();
+        trace.put("useRag", request.getUseRag());
+        trace.put("useTerminology", request.getUseTerminology());
+        trace.put("tmHitCount", tmHitCount);
+        trace.put("domain", request.getDomain());
+        try {
+            return objectMapper.writeValueAsString(trace);
+        } catch (Exception e) {
+            return "{}";
+        }
     }
 
     /**

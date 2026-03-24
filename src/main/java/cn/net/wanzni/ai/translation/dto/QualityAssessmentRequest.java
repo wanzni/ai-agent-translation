@@ -7,6 +7,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 质量评估请求
@@ -62,4 +63,6 @@ public class QualityAssessmentRequest {
      * 可选：评估维度列表（默认包含准确性、流畅性、一致性、完整性）
      */
     private List<String> dimensions;
+
+    private Map<String, String> glossaryMap;
 }

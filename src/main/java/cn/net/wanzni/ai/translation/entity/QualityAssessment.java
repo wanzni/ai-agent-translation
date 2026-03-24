@@ -112,6 +112,26 @@ public class QualityAssessment {
     @Column(name = "assessment_engine", length = 50)
     private String assessmentEngine;
 
+    @Column(name = "terminology_score")
+    private Integer terminologyScore;
+
+    @Column(name = "number_score")
+    private Integer numberScore;
+
+    @Column(name = "format_score")
+    private Integer formatScore;
+
+    @Column(name = "llm_judge_score")
+    private Integer llmJudgeScore;
+
+    @Column(name = "needs_retry", nullable = false)
+    @Builder.Default
+    private Boolean needsRetry = false;
+
+    @Column(name = "needs_human_review", nullable = false)
+    @Builder.Default
+    private Boolean needsHumanReview = false;
+
     /**
      * 是否人工评估
      */

@@ -73,4 +73,24 @@ public class QualityAssessmentResponse {
      * 检测到的源语言
      */
     private String detectedSourceLanguage;
+
+    private Integer numberScore;
+
+    private Integer terminologyScore;
+
+    private Integer formatScore;
+
+    private Integer llmJudgeScore;
+
+    private Boolean needsHumanReview;
+
+    private Boolean needsRetry;
+
+    private Boolean tmEligible;
+
+    private Boolean hardRulePassed;
+
+    private Boolean sensitiveContentDetected;
+
+    private List<String> tmRejectReasons;
 }

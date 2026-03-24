@@ -1,11 +1,11 @@
 package cn.net.wanzni.ai.translation.service.llm;
 
 import cn.net.wanzni.ai.translation.dto.RagContext;
+import cn.net.wanzni.ai.translation.dto.TranslationMemoryMatch;
 import cn.net.wanzni.ai.translation.dto.TranslationRequest;
 import cn.net.wanzni.ai.translation.entity.TerminologyEntry;
-import cn.net.wanzni.ai.translation.entity.TranslationRecord;
 import cn.net.wanzni.ai.translation.repository.TerminologyEntryRepository;
-import cn.net.wanzni.ai.translation.repository.TranslationRecordRepository;
+import cn.net.wanzni.ai.translation.service.TranslationMemoryService;
 import com.huaban.analysis.jieba.JiebaSegmenter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -30,7 +30,7 @@ import java.util.stream.Collectors;
 public class RagService {
 
     private final TerminologyEntryRepository terminologyEntryRepository;
-    private final TranslationRecordRepository translationRecordRepository;
+    private final TranslationMemoryService translationMemoryService;
     /**
      * 可选获取 EmbeddingModel 的 Provider；如未配置，将回退至关键词检索。
      */
@@ -64,7 +64,13 @@ public class RagService {
             );
 
             // 历史检索（优先用户维度，其次全局维度）
-            List<RagContext.HistorySnippet> historySnippets = searchHistorySnippets(request.getUserId(), request.getSourceText(), topK);
+            List<RagContext.HistorySnippet> historySnippets = searchHistorySnippets(
+                    request.getSourceText(),
+                    normSrcLang,
+                    normTgtLang,
+                    request.getDomain(),
+                    topK
+            );
 
             // 组装上下文片段：术语说明 + 历史示例
             List<String> contextSnippets = new ArrayList<>();
@@ -325,26 +331,25 @@ public class RagService {
      * @param topK the number of snippets to return
      * @return the list of history snippets
      */
-    private List<RagContext.HistorySnippet> searchHistorySnippets(Long userId, String sourceText, int topK) {
+    private List<RagContext.HistorySnippet> searchHistorySnippets(String sourceText,
+                                                                  String sourceLanguage,
+                                                                  String targetLanguage,
+                                                                  String domain,
+                                                                  int topK) {
         List<RagContext.HistorySnippet> list = new ArrayList<>();
         if (!StringUtils.hasText(sourceText)) return list;
         try {
-            String query = sourceText.length() > 80 ? sourceText.substring(0, 80) : sourceText;
-            List<TranslationRecord> records;
-            if (userId != null) {
-                records = translationRecordRepository
-                        .searchByTextContentAndUserId(query, userId, PageRequest.of(0, Math.max(5, topK)))
-                        .getContent();
-            } else {
-                records = translationRecordRepository
-                        .searchByTextContent(query, PageRequest.of(0, Math.max(5, topK)))
-                        .getContent();
-            }
-
-            for (TranslationRecord r : records) {
+            List<TranslationMemoryMatch> matches = translationMemoryService.searchSimilar(
+                    sourceText,
+                    sourceLanguage,
+                    targetLanguage,
+                    domain,
+                    topK
+            );
+            for (TranslationMemoryMatch match : matches) {
                 list.add(RagContext.HistorySnippet.builder()
-                        .source(safeCut(r.getSourceText(), 300))
-                        .target(safeCut(r.getTranslatedText(), 300))
+                        .source(safeCut(match.getSourceText(), 300))
+                        .target(safeCut(match.getTargetText(), 300))
                         .build());
             }
         } catch (Exception e) {

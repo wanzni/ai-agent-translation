@@ -69,6 +69,11 @@ public class TranslationRequest {
     private Long userId;
 
     /**
+     * 关联的 Agent 任务ID（可选）
+     */
+    private Long agentTaskId;
+
+    /**
      * 领域标签（可选，用于术语库匹配）
      */
     private String domain;
