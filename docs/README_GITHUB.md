@@ -84,19 +84,19 @@
 
 **文本翻译**
 
-![image-20260325144611596](README.assets\image-20260325144611596.png)
+![image-20260325144611596](README.assets/image-20260325144611596.png)
 
 **文档翻译**
 
-![image-20260325144724735](README.assets\image-20260325144724735.png)
+![image-20260325144724735](README.assets/image-20260325144724735.png)
 
 **客服对话**
 
-![image-20260325144828497](README.assets\image-20260325144828497.png)
+![image-20260325144828497](README.assets/image-20260325144828497.png)
 
 **术语库**
 
-![image-20260325144611596](README.assets\image-20260325144611596.png)
+![image-20260325145009256](README.assets/image-20260325145009256.png)
 
 **质量评估**
 
