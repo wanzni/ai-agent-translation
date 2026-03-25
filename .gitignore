@@ -6,7 +6,8 @@ target
 .idea/
 *.log
 logs
-docs
+docs/*
+!docs/README_GITHUB.md
 *.DS_Store
 /heap_dump.hprof
 application-dev.yml
