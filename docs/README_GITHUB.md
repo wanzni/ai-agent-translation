@@ -82,21 +82,25 @@
 
 ## 页面展示
 
-项目已经包含较完整的演示页面，可直接用于 GitHub 项目说明或本地功能演示：
+**文本翻译**
 
-- 首页
-- 文本翻译
-- 批量翻译
-- 文档翻译
-- 术语库
-- 实时聊天
-- 历史记录
-- 质量评估
-- 统计分析
-- 系统设置
-- 登录、会员、订单、支付页
+![image-20260325144611596](C:\Users\xiaozhen\AppData\Roaming\Typora\typora-user-images\image-20260325144611596.png)
 
-对应模板位于 `src/main/resources/templates`。
+**文档翻译**
+
+![image-20260325144724735](C:\Users\xiaozhen\AppData\Roaming\Typora\typora-user-images\image-20260325144724735.png)
+
+**客服对话**
+
+![image-20260325144828497](C:\Users\xiaozhen\AppData\Roaming\Typora\typora-user-images\image-20260325144828497.png)
+
+**术语库**
+
+![image-20260325144611596](C:\Users\xiaozhen\AppData\Roaming\Typora\typora-user-images\image-20260325144611596.png)
+
+**质量评估**
+
+![image-20260325145009256](C:\Users\xiaozhen\AppData\Roaming\Typora\typora-user-images\image-20260325145009256.png)
 
 ## 目录结构
 
@@ -121,23 +125,275 @@ translation-ai-agent/
 └─ docs
 ```
 
-## 适合展示的能力点
-
-- 从单次翻译到对话翻译、文档翻译的完整业务闭环
-- 从 AI 能力接入到术语库、质量评估、审核流程的扩展设计
-- 从后端接口到前端页面模板的全栈式工程组织
-- 从翻译能力到会员、积分、支付的产品化落地思路
-
 ## 本地运行说明
 
-由于仓库中未提交实际运行配置文件和敏感密钥，启动前需要自行补充本地配置。
+由于仓库中未提交实际运行配置文件和敏感密钥，启动前需要自行补充本地配置，建议防止在`src/main/resources`路径下
+
+**application.yml示例**
+
+```yml
+server:
+  port: 7002
+  servlet:
+    context-path: /
+
+# 移动端扫码可访问的主机地址（含端口），用于生成二维码链接中的回调域名
+# 本机开发请改为局域网IP，如：app.base-url: http://192.168.1.10:7002
+
+spring:
+  application:
+    name: translation-ai-agent
+  profiles:
+    active: dev
+
+  # 数据源配置 - 使用H2内存数据库进行开发测试
+  datasource:
+    url: jdbc:mysql://localhost:3306/translation?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC&useSSL=false&allowPublicKeyRetrieval=true
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: your username
+    password: your password
+
+  # JPA配置
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.MySQLDialect
+
+  # Redis配置
+  data:
+    redis:
+      database: 2
+      host: your host
+      port: 6379
+      password: your password
+      timeout: 10000ms
+      lettuce:
+        pool:
+          max-active: 20
+          max-idle: 10
+          min-idle: 5
+          max-wait: 5000ms
+
+    # Elasticsearch配置
+    elasticsearch:
+      repositories:
+        enabled: true
+      uris: your uris
+
+  # Thymeleaf配置
+  thymeleaf:
+    cache: false
+    encoding: UTF-8
+    mode: HTML
+    prefix: classpath:/templates/
+    suffix: .html
+
+  # WebSocket配置
+  websocket:
+    allowed-origins: "*"
+
+  # 文件上传配置
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 100MB
+
+# AI服务配置
+ai:
+  # 通义千问（DashScope）配置（用于文本翻译）
+  dashscope:
+    enabled: ${ai.dashscope.enabled:false}
+    api-key: ${ai.dashscope.api-key:your api-key}
+    chat:
+      options:
+        model: ${ai.dashscope.chat.options.model:qwen3-max}
+        temperature: ${ai.dashscope.chat.options.temperature:0.7}
+
+  # 阿里云翻译配置
+  aliyun:
+    access-key-id: ${ai.aliyun.access-key-id:your access-key-id}
+    access-key-secret: ${ai.aliyun.access-key-secret:your access-key-secret}
+    region: ${ai.aliyun.region:cn-hangzhou}
+    endpoint: ${ai.aliyun.endpoint:mt.cn-hangzhou.aliyuncs.com}
+
+# MinIO配置
+minio:
+  endpoint: your url
+  bucketName: translation-dev
+  secure: false
+  accessKey: your key
+  secretKey: your secret
+
+# 应用配置
+app:
+  baseUrl: ${APP_BASE_URL:http://localhost:7002}
+  # 翻译配置
+  translation:
+    # 支持的语言列表
+    supported-languages:
+      - code: zh
+        name: 中文
+        native-name: 中文
+      - code: en
+        name: 英语
+        native-name: English
+      - code: ja
+        name: 日语
+        native-name: 日本語
+      - code: ko
+        name: 韩语
+        native-name: 한국어
+      - code: fr
+        name: 法语
+        native-name: Français
+      - code: de
+        name: 德语
+        native-name: Deutsch
+      - code: es
+        name: 西班牙语
+        native-name: Español
+      - code: ru
+        name: 俄语
+        native-name: Русский
+
+    # 翻译质量评估配置
+    quality:
+      enabled: true
+      threshold: 0.8
+      dimensions:
+        - accuracy
+        - fluency
+        - consistency
+        - completeness
+
+    # 缓存配置
+    cache:
+      enabled: true
+      ttl: 3600 # 缓存时间（秒）
+      max-size: 10000 # 最大缓存条目数
+
+  # 文档处理配置
+  document:
+    # 支持的文档格式
+    supported-formats:
+      - pdf
+      - doc
+      - docx
+      - xls
+      - xlsx
+      - ppt
+      - pptx
+      - txt
+
+    # 文档大小限制（MB）
+    max-size: 50
+
+    # 处理超时时间（秒）
+    timeout: 300
+
+  # MQ开关（RocketMQ监听是否启用）
+  mq:
+    enabled: ${APP_MQ_ENABLED:false}
+
+  # 会员与点数配置
+  membership:
+    monthly-quota: 5000
+    subscribe-bonus-points: 5000
+  points:
+    text-deduction: 1
+    document-deduction: 10
+
+# 日志配置
+logging:
+  level:
+    com.ai.translation: DEBUG
+    cn.net.wanzni.ai.translation: DEBUG
+    cn.net.wanzni.ai.translation.service.impl.DocumentTranslationServiceImpl: DEBUG
+    org.springframework.ai: DEBUG
+    org.springframework.data.elasticsearch: DEBUG
+    org.apache.pdfbox.pdmodel.font.FileSystemFontProvider: ERROR
+    org.apache.fontbox: ERROR
+    # Hibernate SQL 与参数绑定日志（覆盖不同版本的Hibernate）
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql: TRACE
+    org.hibernate.type.descriptor.jdbc: TRACE
+    org.hibernate.orm.jdbc.bind: TRACE
+    org.hibernate.stat: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/translation-assistant.log
+
+# 管理端点配置
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    prometheus:
+      metrics:
+        export:
+          enabled: true
+
+        # RocketMQ配置（如本地未部署RocketMQ，发送失败将被捕获不影响下单）
+rocketmq:
+  name-server: your url
+  producer:
+    group: translation-ai-agent-producer
+
+# 支付配置（真实接入需填写以下参数）
+pay:
+  alipay:
+    enabled: true
+    sandbox: ${PAY_ALIPAY_SANDBOX:true}
+    app-id: ${PAY_ALIPAY_APP_ID:}
+    merchant-private-key: ${PAY_ALIPAY_PRIVATE_KEY:}
+    alipay-public-key: ${PAY_ALIPAY_PUBLIC_KEY:}
+    notify-url: ${PAY_ALIPAY_NOTIFY_URL:http://localhost:${server.port}/api/payment/notify/alipay}
+  wechat:
+    enabled: true
+    app-id: ${PAY_WECHAT_APP_ID:}
+    mchid: ${PAY_WECHAT_MCHID:}
+    merchant-serial-number: ${PAY_WECHAT_SERIAL_NO:}
+    api-v3-key: ${PAY_WECHAT_API_V3_KEY:}
+    private-key-path: ${PAY_WECHAT_PRIVATE_KEY_PATH:}
+    notify-url: ${PAY_WECHAT_NOTIFY_URL:http://localhost:${server.port}/api/payment/notify/wechat}
+chat:
+  sse:
+    executor:
+      # 线程池核心线程数
+      core-pool-size: 8
+      # 线程池最大线程数
+      max-pool-size: 20
+      # 有界队列容量，避免无界排队导致内存膨胀
+      queue-capacity: 500
+      # 空闲线程保活秒数
+      keep-alive-seconds: 60
+      # 关闭时是否等待任务完成
+      wait-for-tasks-to-complete-on-shutdown: true
+      # 关闭等待的最大秒数
+      await-termination-seconds: 5
+      # 是否允许核心线程超时
+      allow-core-thread-time-out: false
+      # 线程名前缀，便于日志观测
+      thread-name-prefix: "chat-sse-"
+```
 
 ### 建议准备
 
 - JDK 21
 - Maven 3.9+
-- MySQL
-- Redis
+- MySQL 8.0+
+- Redis 6.0+
 - MinIO
 - 阿里云翻译相关密钥
 - Qwen / Spring AI 相关配置
