@@ -1,4 +1,4 @@
-# Translation AI Agent
+# 智能翻译ai agent系统
 
 ![Java](https://img.shields.io/badge/Java-21-orange)
 ![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.5.10-6DB33F)
