@@ -196,7 +196,7 @@ public class ChatTranslationController {
         });
         emitter.onTimeout(() -> {
             try {
-                emitter.send(SseEmitter.event().name("error").data("timeout"));
+                emitter.send(SseEmitter.event().name("failed").data("请求超时，请稍后重试"));
             } catch (Exception ignore) {}
             try {
                 emitter.complete();
@@ -249,6 +249,17 @@ public class ChatTranslationController {
                 }
                 //流式发送（打字机效果）
                 // 开始事件，携带 messageId 便于前端关联
+                if ((save == null || Boolean.TRUE.equals(save)) && translated != null && !translated.isBlank()) {
+                    String receiver = (userId != null && !userId.isBlank()) ? userId : "888";
+                    chatTranslationService.createAssistantReply(
+                            sessionId,
+                            translated,
+                            translated,
+                            targetLanguage,
+                            targetLanguage,
+                            receiver
+                    );
+                }
                 String startPayload = json("{\"messageId\":\"" + safe(startMessageId) + "\"}");
                 sseStreamService.sendEventAndHub(emitter, sessionSseHub, sessionId, "start", startPayload);
 
@@ -328,6 +339,30 @@ public class ChatTranslationController {
                 if (srcCode == null) srcCode = "zh";
                 if (trgCode == null) trgCode = "en";
 
+                if (save == null || Boolean.TRUE.equals(save)) {
+                    Long senderUserId = null;
+                    if (userId != null && !userId.isBlank()) {
+                        try {
+                            senderUserId = Long.parseLong(userId.trim());
+                        } catch (NumberFormatException ignore) {
+                            senderUserId = null;
+                        }
+                    }
+                    if (senderUserId == null) {
+                        senderUserId = 888L;
+                    }
+                    chatTranslationService.createUserMessage(
+                            sessionId,
+                            senderUserId,
+                            "888",
+                            message,
+                            srcCode,
+                            trgCode
+                    );
+                }
+
+                sseStreamService.sendEvent(emitter, "status", "正在生成回复...");
+
                 // 将用户消息（目标语言）按需翻译为英文以供 LLM 生成客服回复
                 String messageEnForLLM = message;
                 if (!"en".equalsIgnoreCase(trgCode)) {
@@ -373,6 +408,8 @@ public class ChatTranslationController {
                     if (serviceTarget == null) serviceTarget = "";
                 }
 
+                sseStreamService.sendEvent(emitter, "status", "正在整理回复内容...");
+
                 // 首先流式输出“客服（目标语言）”：首帧 bot_start，后续 bot_delta（打字效果）
                 sseStreamService.streamStartDelta(emitter, serviceTarget, 8, 120L, "bot_start", "bot_delta");
 
@@ -398,6 +435,8 @@ public class ChatTranslationController {
                 }
                 if (translatedSource == null) translatedSource = "";
 
+                sseStreamService.sendEvent(emitter, "status", "正在输出最终回复...");
+
                 // 根据开关选择性持久化机器人回复消息（原文=目标语，译文=源语）
                 if (save == null || Boolean.TRUE.equals(save)) {
                     String receiver = (userId != null && !userId.isBlank()) ? userId : "";
@@ -418,6 +457,11 @@ public class ChatTranslationController {
                     // 忽略由于响应已出错导致的完成异常
                 }
             } catch (Exception e) {
+                try {
+                    sseStreamService.sendEvent(emitter, "failed", e.getMessage() != null && !e.getMessage().isBlank() ? e.getMessage() : "当前会话请求失败，请重试");
+                } catch (RuntimeException ignore) {
+                    // 忽略发送失败事件时的异常
+                }
                 try {
                     emitter.completeWithError(e);
                 } catch (RuntimeException ignore) {

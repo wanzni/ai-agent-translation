@@ -41,7 +41,7 @@ public class DocumentProgressResponse {
     /**
      * 处理状态
      */
-    private Integer status;
+    private String status;
 
     /**
      * 状态描述

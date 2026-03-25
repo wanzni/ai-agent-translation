@@ -20,6 +20,8 @@ import cn.net.wanzni.ai.translation.service.agent.AgentTaskService;
 import cn.net.wanzni.ai.translation.service.agent.AgentWorkflowService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
@@ -71,7 +73,17 @@ public class AgentTaskServiceImpl implements AgentTaskService {
                 .build();
         agentTaskStepRepository.save(createdStep);
 
-        agentWorkflowService.submitTextTask(savedTask.getId());
+        Long taskId = savedTask.getId();
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    agentWorkflowService.submitTextTask(taskId);
+                }
+            });
+        } else {
+            agentWorkflowService.submitTextTask(taskId);
+        }
         return toResponse(savedTask);
     }
 

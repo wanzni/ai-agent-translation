@@ -56,7 +56,12 @@ public class ChatTranslationServiceImpl implements ChatTranslationService {
         } else {
             sessions = chatSessionRepository.findByUserId(userId, Pageable.unpaged()).getContent();
         }
-        return sessions.stream().map(this::convertToResponse).collect(Collectors.toList());
+        return sessions.stream()
+                .sorted(Comparator.comparing(ChatSession::getLastActiveAt,
+                        Comparator.nullsLast(Comparator.reverseOrder()))
+                        .thenComparing(ChatSession::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
+                .map(this::convertToResponse)
+                .collect(Collectors.toList());
     }
 
     private ChatSessionResponse convertToResponse(ChatSession session) {
@@ -65,10 +70,11 @@ public class ChatTranslationServiceImpl implements ChatTranslationService {
                 .sessionName(session.getSessionTitle())
                 .sourceLanguage(session.getUserALanguage())
                 .targetLanguage(session.getUserBLanguage())
+                .createdBy(session.getUserAId())
                 .createdAt(session.getCreatedAt())
                 .status(session.getStatus().name().toLowerCase())
-                .participantCount(2) // Placeholder
-                .messageCount(session.getMessageCount())
+                .participantCount(countParticipants(session))
+                .messageCount(session.getMessageCount() == null ? 0 : session.getMessageCount())
                 .lastActivity(session.getLastActiveAt())
                 .build();
     }
@@ -82,8 +88,31 @@ public class ChatTranslationServiceImpl implements ChatTranslationService {
     @Override
     public ChatSessionResponse createChatSession(CreateChatSessionRequest request) {
         String sessionId = "session_" + System.currentTimeMillis();
-        
-        ChatSessionResponse session = new ChatSessionResponse();
+        String creator = (request.getCreatedBy() != null && !request.getCreatedBy().isBlank())
+                ? request.getCreatedBy()
+                : "888";
+
+        ChatSession entity = ChatSession.builder()
+                .sessionId(sessionId)
+                .userAId(creator)
+                .userBId("888")
+                .userALanguage(request.getSourceLanguage())
+                .userBLanguage(request.getTargetLanguage())
+                .sessionTitle(request.getSessionName())
+                .status(SessionStatusEnum.ACTIVE)
+                .messageCount(0)
+                .lastActiveAt(LocalDateTime.now())
+                .build();
+        entity = chatSessionRepository.save(entity);
+
+        ChatSessionResponse session = convertToResponse(entity);
+        session.setDescription(request.getDescription());
+        chatSessions.put(sessionId, session);
+        sessionMessages.put(sessionId, new ArrayList<>());
+        sessionUsers.put(sessionId, new HashSet<>(Arrays.asList(creator, "888")));
+        unreadCounts.put(sessionId, new HashMap<>());
+        return session;
+        /*
         session.setSessionId(sessionId);
         session.setSessionName(request.getSessionName());
         session.setSourceLanguage(request.getSourceLanguage());
@@ -104,6 +133,7 @@ public class ChatTranslationServiceImpl implements ChatTranslationService {
         unreadCounts.put(sessionId, new HashMap<>());
         
         return session;
+        */
     }
     
     /**
@@ -114,11 +144,14 @@ public class ChatTranslationServiceImpl implements ChatTranslationService {
      */
     @Override
     public ChatSessionResponse getChatSession(String sessionId) {
+        return convertToResponse(findSessionEntity(sessionId));
+        /*
         ChatSessionResponse session = chatSessions.get(sessionId);
         if (session == null) {
             throw new RuntimeException("聊天会话不存在: " + sessionId);
         }
         return session;
+        */
     }
     
     /**
@@ -130,6 +163,24 @@ public class ChatTranslationServiceImpl implements ChatTranslationService {
      */
     @Override
     public ChatSessionResponse updateChatSession(String sessionId, UpdateChatSessionRequest request) {
+        ChatSession session = findSessionEntity(sessionId);
+
+        if (request.getSessionName() != null) {
+            session.setSessionTitle(request.getSessionName());
+        }
+        if (request.getSourceLanguage() != null) {
+            session.setUserALanguage(request.getSourceLanguage());
+        }
+        if (request.getTargetLanguage() != null) {
+            session.setUserBLanguage(request.getTargetLanguage());
+        }
+
+        session.setLastActiveAt(LocalDateTime.now());
+        ChatSession saved = chatSessionRepository.save(session);
+        ChatSessionResponse response = convertToResponse(saved);
+        chatSessions.put(sessionId, response);
+        return response;
+        /*
         ChatSessionResponse session = getChatSession(sessionId);
         
         if (request.getSessionName() != null) {
@@ -144,6 +195,7 @@ public class ChatTranslationServiceImpl implements ChatTranslationService {
         
         session.setLastActivity(LocalDateTime.now());
         return session;
+        */
     }
     
     /**
@@ -153,9 +205,16 @@ public class ChatTranslationServiceImpl implements ChatTranslationService {
      */
     @Override
     public void endChatSession(String sessionId) {
+        ChatSession session = findSessionEntity(sessionId);
+        session.endSession();
+        session.setLastActiveAt(LocalDateTime.now());
+        ChatSession saved = chatSessionRepository.save(session);
+        chatSessions.put(sessionId, convertToResponse(saved));
+        /*
         ChatSessionResponse session = getChatSession(sessionId);
         session.setStatus(SessionStatusEnum.ENDED.name().toLowerCase());
         session.setLastActivity(LocalDateTime.now());
+        */
     }
     
     /**
@@ -246,6 +305,39 @@ public class ChatTranslationServiceImpl implements ChatTranslationService {
                 ? request.getReceiverId().trim()
                 : "888";
 
+        if (session == null) {
+            session = ChatSession.builder()
+                    .sessionId(sessionIdStr)
+                    .userAId(String.valueOf(resolvedSenderId))
+                    .userBId(resolvedReceiverId)
+                    .userALanguage(sourceLang)
+                    .userBLanguage(targetLang)
+                    .sessionTitle("Chat Session")
+                    .status(SessionStatusEnum.ACTIVE)
+                    .messageCount(0)
+                    .lastActiveAt(LocalDateTime.now())
+                    .build();
+        } else {
+            session.setUserAId(String.valueOf(resolvedSenderId));
+            if (session.getUserBId() == null || session.getUserBId().isBlank()) {
+                session.setUserBId(resolvedReceiverId);
+            }
+            if (sourceLang != null && !sourceLang.isBlank()) {
+                session.setUserALanguage(sourceLang.trim());
+            }
+            if (targetLang != null && !targetLang.isBlank()) {
+                session.setUserBLanguage(targetLang.trim());
+            }
+            if (session.getSessionTitle() == null || session.getSessionTitle().isBlank()) {
+                session.setSessionTitle("Chat Session");
+            }
+            session.setStatus(SessionStatusEnum.ACTIVE);
+            session.setLastActiveAt(LocalDateTime.now());
+        }
+        session = chatSessionRepository.save(session);
+        sessionUsers.computeIfAbsent(sessionIdStr, k -> new HashSet<>())
+                .addAll(Arrays.asList(String.valueOf(resolvedSenderId), resolvedReceiverId));
+
         ChatMessage message = new ChatMessage();
         message.setSessionId(session.getId());
         message.setSenderId(resolvedSenderId);
@@ -263,12 +355,73 @@ public class ChatTranslationServiceImpl implements ChatTranslationService {
         message = translateMessageSync(message);
 
         ChatMessageResponse response = convertToResponse(message);
+        session.incrementMessageCount();
+        chatSessionRepository.save(session);
+        chatSessions.put(sessionIdStr, convertToResponse(session));
         // 写入内存会话消息列表，便于实时对话读取
         sessionMessages.computeIfAbsent(sessionIdStr, k -> new ArrayList<>()).add(response);
         // 更新未读计数（将 Long senderId 转为字符串）
         updateUnreadCounts(sessionIdStr, String.valueOf(resolvedSenderId));
 
         return response;
+    }
+
+    /**
+     * 创建并保存自动客服回复消息。
+     */
+    @Override
+    public ChatMessageResponse createUserMessage(
+            String sessionIdStr,
+            Long senderId,
+            String receiverId,
+            String originalMessage,
+            String sourceLanguage,
+            String targetLanguage) {
+
+        String normalizedSenderId = senderId != null ? String.valueOf(senderId) : "888";
+        String normalizedReceiverId = (receiverId != null && !receiverId.isBlank()) ? receiverId.trim() : "888";
+        String normalizedOriginal = originalMessage != null ? originalMessage.trim() : "";
+        if (normalizedOriginal.isBlank()) {
+            throw new IllegalArgumentException("消息内容不能为空");
+        }
+
+        ChatSession session = chatSessionRepository.findBySessionId(sessionIdStr);
+        if (session == null) {
+            session = ChatSession.builder()
+                    .sessionId(sessionIdStr)
+                    .userAId(normalizedSenderId)
+                    .userBId(normalizedReceiverId)
+                    .userALanguage(sourceLanguage != null ? sourceLanguage : "zh")
+                    .userBLanguage(targetLanguage != null ? targetLanguage : "en")
+                    .sessionTitle("Chat Session")
+                    .status(SessionStatusEnum.ACTIVE)
+                    .messageCount(0)
+                    .lastActiveAt(LocalDateTime.now())
+                    .build();
+            session = chatSessionRepository.save(session);
+        }
+
+        ChatMessage msg = new ChatMessage();
+        msg.setSessionId(session.getId());
+        msg.setSenderId(senderId != null ? senderId : 888L);
+        msg.setReceiverId(normalizedReceiverId);
+        msg.setOriginalMessage(normalizedOriginal);
+        msg.setSourceLanguage(sourceLanguage != null ? sourceLanguage : "zh");
+        msg.setTargetLanguage(targetLanguage);
+        msg.setMessageType(MessageTypeEnum.TEXT);
+        msg.setTranslationStatus(TranslationStatusEnum.COMPLETED);
+
+        msg = chatMessageRepository.save(msg);
+
+        ChatMessageResponse resp = convertToResponse(msg);
+        session.incrementMessageCount();
+        chatSessionRepository.save(session);
+        chatSessions.put(sessionIdStr, convertToResponse(session));
+        sessionUsers.computeIfAbsent(sessionIdStr, k -> new HashSet<>())
+                .addAll(Arrays.asList(normalizedSenderId, normalizedReceiverId));
+        sessionMessages.computeIfAbsent(sessionIdStr, k -> new ArrayList<>()).add(resp);
+        updateUnreadCounts(sessionIdStr, normalizedSenderId);
+        return resp;
     }
 
     /**
@@ -287,9 +440,14 @@ public class ChatTranslationServiceImpl implements ChatTranslationService {
         if (session == null) {
             session = ChatSession.builder()
                     .sessionId(sessionIdStr)
+                    .userAId(receiverId != null && !receiverId.isBlank() ? receiverId.trim() : "888")
+                    .userBId("888")
                     .userALanguage(sourceLanguage != null ? sourceLanguage : "en")
                     .userBLanguage(targetLanguage != null ? targetLanguage : "zh")
                     .sessionTitle("Chat Session")
+                    .status(SessionStatusEnum.ACTIVE)
+                    .messageCount(0)
+                    .lastActiveAt(LocalDateTime.now())
                     .build();
             session = chatSessionRepository.save(session);
         }
@@ -310,6 +468,11 @@ public class ChatTranslationServiceImpl implements ChatTranslationService {
         msg = chatMessageRepository.save(msg);
 
         ChatMessageResponse resp = convertToResponse(msg);
+        session.incrementMessageCount();
+        chatSessionRepository.save(session);
+        chatSessions.put(sessionIdStr, convertToResponse(session));
+        sessionUsers.computeIfAbsent(sessionIdStr, k -> new HashSet<>())
+                .addAll(Arrays.asList("888", msg.getReceiverId()));
         sessionMessages.computeIfAbsent(sessionIdStr, k -> new ArrayList<>()).add(resp);
         // 更新未读计数，接收者为当前用户
         updateUnreadCounts(sessionIdStr, msg.getReceiverId());
@@ -373,6 +536,25 @@ public class ChatTranslationServiceImpl implements ChatTranslationService {
                 .sentAt(message.getCreatedAt())
                 .messageType(message.getMessageType().ordinal())
                 .build();
+    }
+
+    private ChatSession findSessionEntity(String sessionId) {
+        ChatSession session = chatSessionRepository.findBySessionId(sessionId);
+        if (session == null) {
+            throw new RuntimeException("Chat session not found: " + sessionId);
+        }
+        return session;
+    }
+
+    private int countParticipants(ChatSession session) {
+        int count = 0;
+        if (session.getUserAId() != null && !session.getUserAId().isBlank()) {
+            count++;
+        }
+        if (session.getUserBId() != null && !session.getUserBId().isBlank()) {
+            count++;
+        }
+        return Math.max(count, 1);
     }
     
     /**

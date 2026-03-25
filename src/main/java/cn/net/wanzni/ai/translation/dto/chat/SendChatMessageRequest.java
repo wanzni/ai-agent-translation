@@ -14,6 +14,8 @@ import jakarta.validation.constraints.Size;
  * @since 1.0.0
  */
 @Data
+@NoArgsConstructor
+@AllArgsConstructor
 @Builder
 public class SendChatMessageRequest {
     private String message;
@@ -42,4 +44,26 @@ public class SendChatMessageRequest {
     private Boolean useTerminology;
 
     private String translationEngine;
+
+    public String getMessage() {
+        return (message != null && !message.isBlank()) ? message : originalMessage;
+    }
+
+    public void setMessage(String message) {
+        this.message = message;
+        if ((this.originalMessage == null || this.originalMessage.isBlank()) && message != null) {
+            this.originalMessage = message;
+        }
+    }
+
+    public String getOriginalMessage() {
+        return (originalMessage != null && !originalMessage.isBlank()) ? originalMessage : message;
+    }
+
+    public void setOriginalMessage(String originalMessage) {
+        this.originalMessage = originalMessage;
+        if ((this.message == null || this.message.isBlank()) && originalMessage != null) {
+            this.message = originalMessage;
+        }
+    }
 }

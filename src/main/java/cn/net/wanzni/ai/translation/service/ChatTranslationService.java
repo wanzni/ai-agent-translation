@@ -71,6 +71,25 @@ public interface ChatTranslationService {
     ChatMessageResponse sendChatMessage(SendChatMessageRequest request);
 
     /**
+     * 创建并保存用户消息，不触发同步翻译。
+     *
+     * @param sessionId 会话ID
+     * @param senderId 发送者ID
+     * @param receiverId 接收者ID
+     * @param originalMessage 原始消息
+     * @param sourceLanguage 源语言
+     * @param targetLanguage 目标语言
+     * @return 消息信息
+     */
+    ChatMessageResponse createUserMessage(
+            String sessionId,
+            Long senderId,
+            String receiverId,
+            String originalMessage,
+            String sourceLanguage,
+            String targetLanguage);
+
+    /**
      * 创建并保存自动客服回复消息。
      *
      * @param sessionId 会话ID（字符串形式）

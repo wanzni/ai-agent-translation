@@ -239,13 +239,23 @@ public class DocumentTranslationServiceImpl implements DocumentTranslationServic
                 .orElseThrow(() -> new IllegalArgumentException("文档翻译任务不存在"));
 
         return DocumentProgressResponse.builder()
+                .documentId(document.getId())
                 .taskId(id)
-                .status(document.getStatus().getValue())
+                .fileName(document.getOriginalFilename())
+                .status(document.getStatus() == null ? null : document.getStatus().name())
                 .progress(document.getProgress())
                 .totalPages(10) // 模拟数据
                 .processedPages(document.getProgress() / 10)
                 .statusMessage(document.getStatusMessage())
+                .totalPages(document.getTotalPages())
+                .processedPages(document.getProcessedPages())
+                .estimatedCompletionTime(document.getCompletionTime())
+                .errorMessage(document.getStatus() == ProcessingStatusEnum.PAUSED
+                        || document.getStatus() == ProcessingStatusEnum.FAILED ? document.getStatusMessage() : null)
+                .useTerminology(document.getUseTerminology())
+                .translationEngine(document.getTranslationEngine())
                 .processingTime(45000L) // 模拟数据
+                .processingTime(document.getProcessingTime())
                 .build();
     }
 
