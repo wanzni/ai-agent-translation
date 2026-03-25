@@ -8,6 +8,7 @@ target
 logs
 docs/*
 !docs/README_GITHUB.md
+!docs/README.assets/*
 *.DS_Store
 /heap_dump.hprof
 application-dev.yml
