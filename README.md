@@ -5,102 +5,171 @@
 ![Spring AI](https://img.shields.io/badge/Spring_AI-1.0.0-blue)
 ![Status](https://img.shields.io/badge/Status-Active-success)
 
-一个面向实际业务场景的 AI 翻译平台，覆盖文本翻译、文档翻译、实时对话翻译、术语库、质量评估、会员积分与支付能力，并引入 Agent 化翻译流程与流式交互体验。
+一个面向翻译与客服场景的 AI Agent 工作流后端项目。
 
-这个项目不是单一的翻译接口封装，而是一个完整的多模块翻译系统原型，重点展示了 AI 能力接入、业务系统设计、文件处理链路、术语一致性控制，以及面向产品化的后端架构实现。
+它不是单纯“调用模型 API 的翻译 demo”，而是把文本翻译、文档翻译、客服对话、质量评估、人工复核、术语库、TM 回流、会员订单与 mock 支付等能力，收敛到一条可追踪、可评估、可人工兜底的后端工作流里。
 
-## 项目亮点
+## 项目定位
 
-- 支持文本翻译、批量翻译、文档翻译、聊天翻译四类核心场景
-- 接入 Spring AI、阿里云机器翻译、Qwen 能力，支持 AI 增强翻译流程
-- 内置术语库、润色、质量评估、RAG/Agent 扩展能力
-- 支持 SSE 流式输出，适合实时翻译和渐进式结果展示
-- 覆盖会员、积分、订单、支付模拟等产品化模块
-- 提供完整前端页面模板，便于直接演示和二次开发
+当前项目主线是：
 
-## 功能概览
+- Task 化 Workflow SSE
+- 质量评估与 Quality Gate
+- Human-in-the-loop 人工复核闭环
+- review queue 运营能力
+- TM 回流与术语一致性增强
+- 文档异步处理与客服对话流式体验
+- Eval-driven revise loop
 
-### 1. 文本翻译
+当前定位为单 Agent 工作流后端，不刻意包装为多智能体平台，也不为了简历强塞 Function Calling。
 
-- 普通文本翻译
-- 批量文本翻译
-- 语言检测
-- 支持语言对校验
-- 翻译引擎列表查询
-- 译文润色与术语增强
-- SSE 流式翻译输出
+## 核心亮点
 
-### 2. 文档翻译
+- 文本翻译从同步 demo 升级为真实 task workflow SSE，标准链路为 `POST /api/agent/tasks/text` + `GET /api/agent/tasks/{taskId}/events`
+- 建立固定六类事件模型：`connected`、`snapshot`、`task`、`step`、`result`、`done`
+- 在真实持久化 workflow 节点发布 SSE 事件，前端可基于 timeline 展示任务进展，而不是等整条流程结束后才看到结果
+- 落地 Quality Gate、人工复核、review queue、review 统计、人工复核结果回流 TM
+- 引入 RAG fallback，在术语命中不足或上下文不足时补充检索增强
+- 落地 Eval-driven revise loop：初译后先评估，只对硬规则问题做单次自动修正，失败后转人工复核
+- 修复 `translationEngine` 参数语义链断裂问题，打通前端引擎选择到真实翻译执行链路
+- 首页已接回真实登录、会员、订单、点数与 mock 支付链路，支持展示用户状态与会员状态
 
-- 文档上传、任务创建、启动翻译
-- 进度查询、结果下载、原文下载
-- 支持多种办公文档与 PDF 处理链路
-- 集成对象存储，适合中大型文件翻译场景
+## 当前能力概览
 
-### 3. 对话翻译
+### 1. 文本翻译与 Agent 工作流
 
-- 会话创建、更新、结束
-- 消息发送与历史拉取
-- SSE 流式消息翻译
-- 自动回复与会话事件流
+- 文本翻译任务化，支持创建任务后订阅 SSE 事件流
+- `TRANSLATE` step 完成后即可预览译文，不再等待整条流程结束
+- 支持 workflow timeline 读取与前端阶段可视化
+- 支持不同翻译引擎透传，避免 workflow 改造后参数语义丢失
 
-### 4. 翻译增强能力
+### 2. 质量治理闭环
 
-- 术语库管理与统计
-- 翻译质量评估
-- 基于 Prompt 的润色能力
-- Agent 任务、步骤、时间线与事件流
-- Review 审核任务流转
+- TM 入库闸门 / Quality Gate
+- 人工复核闭环
+- review queue 运营能力
+- review 统计接口
+- 人工复核结果回流 TM
+- 敏感内容可直接跳过自动修正，进入人工复核
 
-### 5. 产品化能力
+### 3. Eval-driven Revise Loop
 
-- 手机号注册登录
-- 会员订阅
-- 点数余额管理
-- 下单、预支付、确认支付
-- 支付宝/微信模拟支付页面
+当前 revise loop 已真实落地到代码，并并入主 workflow：
+
+`PLAN -> RETRIEVE_TERMINOLOGY -> TRANSLATE -> QUALITY_CHECK(INITIAL) -> [REVISE] -> [QUALITY_CHECK(POST_REVISE)] -> FINALIZE`
+
+设计边界：
+
+- `REVISE` 是 workflow step，不是另起一条 demo 链路
+- 只做单次自动修正，最多 1 次
+- 第一版仅修硬规则类问题：数字/单位、术语一致性、格式问题
+- 第二次质量检查仍失败，则转人工复核
+- 敏感内容直接跳过 revise，转人工兜底
+- 当前仅对 `selectedModel == QWEN` 启用自动修正
+- 数据上保留初稿与修正版，前端也支持“先展示初稿，再收口最终结果”
+
+### 4. 文档翻译
+
+- 支持上传即启动的文档翻译流程
+- 支持进度刷新、单任务重试、原文下载、译文下载
+- 结合 MinIO 存储文档与结果文件
+- 已有 Word / Excel / PPT / PDF / TXT 等文件处理链路
+
+### 5. 客服对话
+
+- 已从“发一句回一句”改造成客服场景
+- 支持会话恢复、删除、历史消息查询
+- 发送链路切换到 `/api/chat/sessions/{sessionId}/auto-reply`
+- 支持 `status / delta / done / failed` 阶段事件
+- 前端采用“先阶段状态，再最终回复本地打字机”的流式体验
+
+### 6. 产品化配套能力
+
+- 用户注册登录
+- 当前用户信息查询：`/api/users/me`
+- 当前会员状态查询：`/api/membership/current`
+- 点数余额、会员开通、订单查询
+- 支付页保留 mock 支付体验，不强依赖真实支付接入
+
+## Workflow SSE 事件模型
+
+文本翻译主链路：
+
+1. 前端 `POST /api/agent/tasks/text` 创建任务
+2. 前端 `GET /api/agent/tasks/{taskId}/events` 订阅事件流
+3. 后端在真实 workflow 节点持续发布事件
+4. 前端使用 `snapshot` 初始化状态，使用 `step` 渲染 timeline，使用 `result` / `done` 收口任务
+
+六类固定事件：
+
+- `connected`：SSE 连接建立
+- `snapshot`：初始化任务快照
+- `task`：任务状态变化
+- `step`：工作流节点推进
+- `result`：最终结果输出
+- `done`：事件流完成
+
+## 页面与演示入口
+
+项目提供了完整的 Thymeleaf 页面，可直接演示当前能力：
+
+- `/`：首页，聚合文本翻译、文档翻译、客服对话、术语库、质量评估、账号与会员入口
+- `/translate`：文本翻译页，接入真实 task workflow SSE
+- `/document`：文档翻译页
+- `/chat`：客服对话页
+- `/terminology`：术语库页
+- `/quality`：质量评估页
+- `/membership`：会员开通页
+- `/orders`：订单列表页
+- `/profile`：个人资料页
+- `/login`：登录页
+
+其中支付相关页面为演示链路，默认按 mock 支付方式闭环，不要求实际接入真实支付网关。
+
+## 页面截图
+
+**首页 / 文本翻译**
+
+![文本翻译](README.assets/文本翻译.png)
+
+**文档翻译**
+
+![文档翻译](README.assets/文档翻译.png)
+
+**客服对话**
+
+![客服对话](README.assets/客服对话.png)
+
+**术语库**
+
+![术语库](README.assets/术语库.png)
+
+**质量评估**
+
+![质量评估](README.assets/质量评估.png)
 
 ## 技术栈
 
 - 后端：Java 21、Spring Boot 3.5.10
-- Web：Spring MVC、Thymeleaf、WebSocket、SSE
-- AI：Spring AI、阿里云机器翻译、Qwen
+- Web：Spring MVC、Thymeleaf、SSE、WebFlux
+- AI：Spring AI、阿里云机器翻译、DashScope / Qwen
 - 数据层：Spring Data JPA、MySQL
-- 缓存与消息：Redis、RocketMQ
+- 缓存：Redis
 - 文件处理：Apache POI、PDFBox、MinIO
-- 安全：JWT、拦截器鉴权
+- 鉴权：JWT、拦截器鉴权
+- 其他：测试基于 Spring Boot Test
 
-## 系统模块
+## 核心模块
 
 - `TranslationController`：文本翻译、批量翻译、流式翻译、润色、语言检测
-- `DocumentTranslationController`：文档上传、任务启动、进度查询、下载
-- `ChatTranslationController`：聊天翻译、SSE 会话流、自动回复
-- `TerminologyController`：术语库增删改查与统计
-- `QualityController`：翻译质量评估
-- `AgentTaskController` / `AgentController`：Agent 翻译任务、事件流、步骤追踪
-- `AuthController` / `MembershipController` / `OrderPaymentController`：用户、会员、积分、支付链路
-
-## 页面展示
-
-**文本翻译**
-
-![image-20260325144611596](README.assets/image-20260325144611596.png)
-
-**文档翻译**
-
-![image-20260325144724735](README.assets/image-20260325144724735.png)
-
-**客服对话**
-
-![image-20260325144828497](README.assets/image-20260325144828497.png)
-
-**术语库**
-
-![屏幕截图 2026-03-25 144758](README.assets/屏幕截图%202026-03-25%20144758.png)
-
-**质量评估**
-
-![image-20260325145009256](README.assets/image-20260325145009256.png)
+- `DocumentTranslationController`：文档上传、任务启动、进度查询、结果下载
+- `ChatTranslationController`：客服对话、会话恢复、SSE 自动回复
+- `TerminologyController`：术语库管理与统计
+- `QualityController`：质量评估
+- `AgentTaskController`：Agent 任务创建、事件订阅、timeline 读取
+- `ReviewTaskController`：人工复核任务流转
+- `AuthController` / `CurrentUserController`：登录与当前用户态
+- `MembershipController` / `OrderPaymentController` / `PointsController`：会员、订单、点数与 mock 支付
 
 ## 目录结构
 
@@ -113,299 +182,95 @@ translation-ai-agent/
 │  ├─ service/impl
 │  ├─ service/impl/agent
 │  ├─ service/llm
-│  ├─ core/agent
 │  ├─ repository
 │  ├─ entity
 │  ├─ dto
+│  ├─ enums
 │  └─ config
 ├─ src/main/resources
 │  ├─ templates
-│  └─ static
+│  ├─ static
+│  ├─ application.yml
+│  └─ application-dev.yml
 ├─ database
 └─ docs
 ```
 
-## 本地运行说明
+## 本地启动
 
-由于仓库中未提交实际运行配置文件和敏感密钥，启动前需要自行补充本地配置，建议防止在`src/main/resources`路径下
-
-**application.yml示例**
-
-```yml
-server:
-  port: 7002
-  servlet:
-    context-path: /
-
-# 移动端扫码可访问的主机地址（含端口），用于生成二维码链接中的回调域名
-# 本机开发请改为局域网IP，如：app.base-url: http://192.168.1.10:7002
-
-spring:
-  application:
-    name: translation-ai-agent
-  profiles:
-    active: dev
-
-  # 数据源配置 - 使用H2内存数据库进行开发测试
-  datasource:
-    url: jdbc:mysql://localhost:3306/translation?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC&useSSL=false&allowPublicKeyRetrieval=true
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    username: your username
-    password: your password
-
-  # JPA配置
-  jpa:
-    hibernate:
-      ddl-auto: update
-    show-sql: true
-    properties:
-      hibernate:
-        format_sql: true
-        dialect: org.hibernate.dialect.MySQLDialect
-
-  # Redis配置
-  data:
-    redis:
-      database: 2
-      host: your host
-      port: 6379
-      password: your password
-      timeout: 10000ms
-      lettuce:
-        pool:
-          max-active: 20
-          max-idle: 10
-          min-idle: 5
-          max-wait: 5000ms
-
-    # Elasticsearch配置
-    elasticsearch:
-      repositories:
-        enabled: true
-      uris: your uris
-
-  # Thymeleaf配置
-  thymeleaf:
-    cache: false
-    encoding: UTF-8
-    mode: HTML
-    prefix: classpath:/templates/
-    suffix: .html
-
-  # WebSocket配置
-  websocket:
-    allowed-origins: "*"
-
-  # 文件上传配置
-  servlet:
-    multipart:
-      max-file-size: 50MB
-      max-request-size: 100MB
-
-# AI服务配置
-ai:
-  # 通义千问（DashScope）配置（用于文本翻译）
-  dashscope:
-    enabled: ${ai.dashscope.enabled:false}
-    api-key: ${ai.dashscope.api-key:your api-key}
-    chat:
-      options:
-        model: ${ai.dashscope.chat.options.model:qwen3-max}
-        temperature: ${ai.dashscope.chat.options.temperature:0.7}
-
-  # 阿里云翻译配置
-  aliyun:
-    access-key-id: ${ai.aliyun.access-key-id:your access-key-id}
-    access-key-secret: ${ai.aliyun.access-key-secret:your access-key-secret}
-    region: ${ai.aliyun.region:cn-hangzhou}
-    endpoint: ${ai.aliyun.endpoint:mt.cn-hangzhou.aliyuncs.com}
-
-# MinIO配置
-minio:
-  endpoint: your url
-  bucketName: translation-dev
-  secure: false
-  accessKey: your key
-  secretKey: your secret
-
-# 应用配置
-app:
-  baseUrl: ${APP_BASE_URL:http://localhost:7002}
-  # 翻译配置
-  translation:
-    # 支持的语言列表
-    supported-languages:
-      - code: zh
-        name: 中文
-        native-name: 中文
-      - code: en
-        name: 英语
-        native-name: English
-      - code: ja
-        name: 日语
-        native-name: 日本語
-      - code: ko
-        name: 韩语
-        native-name: 한국어
-      - code: fr
-        name: 法语
-        native-name: Français
-      - code: de
-        name: 德语
-        native-name: Deutsch
-      - code: es
-        name: 西班牙语
-        native-name: Español
-      - code: ru
-        name: 俄语
-        native-name: Русский
-
-    # 翻译质量评估配置
-    quality:
-      enabled: true
-      threshold: 0.8
-      dimensions:
-        - accuracy
-        - fluency
-        - consistency
-        - completeness
-
-    # 缓存配置
-    cache:
-      enabled: true
-      ttl: 3600 # 缓存时间（秒）
-      max-size: 10000 # 最大缓存条目数
-
-  # 文档处理配置
-  document:
-    # 支持的文档格式
-    supported-formats:
-      - pdf
-      - doc
-      - docx
-      - xls
-      - xlsx
-      - ppt
-      - pptx
-      - txt
-
-    # 文档大小限制（MB）
-    max-size: 50
-
-    # 处理超时时间（秒）
-    timeout: 300
-
-  # MQ开关（RocketMQ监听是否启用）
-  mq:
-    enabled: ${APP_MQ_ENABLED:false}
-
-  # 会员与点数配置
-  membership:
-    monthly-quota: 5000
-    subscribe-bonus-points: 5000
-  points:
-    text-deduction: 1
-    document-deduction: 10
-
-# 日志配置
-logging:
-  level:
-    com.ai.translation: DEBUG
-    cn.net.wanzni.ai.translation: DEBUG
-    cn.net.wanzni.ai.translation.service.impl.DocumentTranslationServiceImpl: DEBUG
-    org.springframework.ai: DEBUG
-    org.springframework.data.elasticsearch: DEBUG
-    org.apache.pdfbox.pdmodel.font.FileSystemFontProvider: ERROR
-    org.apache.fontbox: ERROR
-    # Hibernate SQL 与参数绑定日志（覆盖不同版本的Hibernate）
-    org.hibernate.SQL: DEBUG
-    org.hibernate.type.descriptor.sql: TRACE
-    org.hibernate.type.descriptor.jdbc: TRACE
-    org.hibernate.orm.jdbc.bind: TRACE
-    org.hibernate.stat: DEBUG
-  pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
-    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
-  file:
-    name: logs/translation-assistant.log
-
-# 管理端点配置
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,metrics,prometheus
-  endpoint:
-    health:
-      show-details: always
-  metrics:
-    prometheus:
-      metrics:
-        export:
-          enabled: true
-
-        # RocketMQ配置（如本地未部署RocketMQ，发送失败将被捕获不影响下单）
-rocketmq:
-  name-server: your url
-  producer:
-    group: translation-ai-agent-producer
-
-# 支付配置（真实接入需填写以下参数）
-pay:
-  alipay:
-    enabled: true
-    sandbox: ${PAY_ALIPAY_SANDBOX:true}
-    app-id: ${PAY_ALIPAY_APP_ID:}
-    merchant-private-key: ${PAY_ALIPAY_PRIVATE_KEY:}
-    alipay-public-key: ${PAY_ALIPAY_PUBLIC_KEY:}
-    notify-url: ${PAY_ALIPAY_NOTIFY_URL:http://localhost:${server.port}/api/payment/notify/alipay}
-  wechat:
-    enabled: true
-    app-id: ${PAY_WECHAT_APP_ID:}
-    mchid: ${PAY_WECHAT_MCHID:}
-    merchant-serial-number: ${PAY_WECHAT_SERIAL_NO:}
-    api-v3-key: ${PAY_WECHAT_API_V3_KEY:}
-    private-key-path: ${PAY_WECHAT_PRIVATE_KEY_PATH:}
-    notify-url: ${PAY_WECHAT_NOTIFY_URL:http://localhost:${server.port}/api/payment/notify/wechat}
-chat:
-  sse:
-    executor:
-      # 线程池核心线程数
-      core-pool-size: 8
-      # 线程池最大线程数
-      max-pool-size: 20
-      # 有界队列容量，避免无界排队导致内存膨胀
-      queue-capacity: 500
-      # 空闲线程保活秒数
-      keep-alive-seconds: 60
-      # 关闭时是否等待任务完成
-      wait-for-tasks-to-complete-on-shutdown: true
-      # 关闭等待的最大秒数
-      await-termination-seconds: 5
-      # 是否允许核心线程超时
-      allow-core-thread-time-out: false
-      # 线程名前缀，便于日志观测
-      thread-name-prefix: "chat-sse-"
-```
-
-### 建议准备
+### 环境准备
 
 - JDK 21
 - Maven 3.9+
-- MySQL 8.0+
-- Redis 6.0+
+- MySQL 8.x
+- Redis
 - MinIO
-- 阿里云翻译相关密钥
-- Qwen / Spring AI 相关配置
 
-### 启动步骤
+可选依赖：
+
+- Elasticsearch
+- DashScope / 阿里云机器翻译相关密钥
+
+### 数据初始化
+
+按需执行 `database/` 下的 SQL 脚本，例如：
+
+- `01_create_tables.sql`
+- `02_init_data.sql`
+- `03_create_indexes.sql`
+- `04_agent_upgrade.sql`
+
+### 配置说明
+
+项目当前使用：
+
+- `src/main/resources/application.yml`
+- `src/main/resources/application-dev.yml`
+
+启动前请根据本地环境补齐或覆盖以下配置：
+
+- MySQL 连接
+- Redis 连接
+- MinIO 连接
+- DashScope API Key
+- 阿里云机器翻译 AK / SK
+- `app.baseUrl`
+
+建议使用本地私有配置或环境变量覆盖敏感信息，不要把真实密钥再次提交到仓库。
+
+### 启动命令
 
 ```bash
 mvn -q -DskipTests compile
-mvn -q -DskipTests spring-boot:run
+mvn spring-boot:run
 ```
 
-启动后可从首页及各业务页面进入演示流程。
+启动后默认访问：
 
----
+- [http://localhost:7002/](http://localhost:7002/)
+
+## 测试
+
+项目已针对核心 Agent 工作流链路补充测试，常用命令示例：
+
+```bash
+mvn -q "-Dtest=AgentTaskControllerTest,AgentWorkflowServiceImplTest" test
+```
+
+## 当前版本说明
+
+相较于最初的翻译 demo，当前版本已经完成这些关键升级：
+
+- 文本翻译升级为真实 task workflow SSE
+- 首页与 `translate.html` 已接入 workflow 主链事件
+- `translationEngine` 参数语义链修复完成
+- Eval-driven revise loop 已并入主 workflow
+- 首页、会员、订单、个人资料、支付页已重新接回登录态与会员链路
+- 支付页保留 mock 支付闭环，适合本地演示
+
+## 说明
+
+- 当前项目更适合作为“AI Agent 工作流后端项目”理解，而不是多智能体平台
+- 支付链路以 mock 演示为主，不要求真实支付网关落地
+- revise loop 当前只对部分模型与硬规则问题启用，这是有意收敛后的第一版实现
 
