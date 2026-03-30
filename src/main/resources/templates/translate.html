@@ -547,6 +547,7 @@
                 let currentTypewriterTargetText = null;
 
                 const workflowStepLabels = {
+                    REVISE: '自动修正规则问题',
                     CREATED: '任务已创建',
                     PLAN: '任务规划中',
                     RETRIEVE_TERMINOLOGY: '检索术语与上下文',
@@ -556,6 +557,7 @@
                 };
 
                 const workflowStepIcons = {
+                    REVISE: 'fa-wand-magic-sparkles',
                     CREATED: 'fa-circle-plus',
                     PLAN: 'fa-list-check',
                     RETRIEVE_TERMINOLOGY: 'fa-book-open',
@@ -1013,6 +1015,17 @@
                     }
                 }
 
+                function getReviseReasonLabel(reason) {
+                    return {
+                        QUALITY_PASSED: '本次质量通过，未触发自动修正',
+                        ENGINE_UNSUPPORTED: '当前引擎暂不支持自动修正',
+                        SENSITIVE_CONTENT: '检测到敏感内容，跳过自动修正',
+                        POST_REVISE_PASSED: '修正后复检通过',
+                        POST_REVISE_FAILED: '修正后复检未通过，已转人工复核',
+                        REVISE_TRIGGERED: '发现硬规则问题，准备自动修正'
+                    }[reason] || '';
+                }
+
                 function buildStepSummary(step) {
                     const parts = [];
                     const output = safeJsonParse(step.outputJson);
@@ -1037,6 +1050,24 @@
                         }
                         if (typeof output.overallScore !== 'undefined') {
                             parts.push(`总分: ${output.overallScore}`);
+                        }
+                        if (output.phase) {
+                            parts.push(`Stage: ${output.phase}`);
+                        }
+                        if (output.reviseDecision) {
+                            parts.push(`Decision: ${output.reviseDecision}`);
+                        }
+                        if (Array.isArray(output.failedRuleTypes) && output.failedRuleTypes.length > 0) {
+                            parts.push(`Rule issues: ${output.failedRuleTypes.join(', ')}`);
+                        }
+                        if (output.revisionSummary) {
+                            parts.push(`Revision: ${output.revisionSummary}`);
+                        }
+                        if (output.reviseSkipReason) {
+                            const reviseHint = getReviseReasonLabel(output.reviseSkipReason);
+                            if (reviseHint) {
+                                parts.push(reviseHint);
+                            }
                         }
                         if (typeof output.tmEligible !== 'undefined') {
                             parts.push(`TM gate: ${output.tmEligible ? 'PASS' : 'REJECT'}`);
@@ -1136,6 +1167,12 @@
                 function handleTaskResult(result) {
                     currentTaskResult = result;
                     $('#loadingOverlay').addClass('d-none');
+                    if (result && result.revisionApplied && result.revisionSummary) {
+                        const currentMeta = $('#agentTaskMeta').text();
+                        if (!currentMeta.includes(result.revisionSummary)) {
+                            $('#agentTaskMeta').text(`${currentMeta} | ${result.revisionSummary}`);
+                        }
+                    }
                     if (typewriterTimer && currentTypewriterTargetText === (result.finalResponse || '')) {
                         return;
                     }

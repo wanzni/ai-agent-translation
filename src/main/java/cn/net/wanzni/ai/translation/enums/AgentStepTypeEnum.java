@@ -13,6 +13,7 @@ public enum AgentStepTypeEnum {
     RETRIEVE_MEMORY("Retrieve translation memory"),
     TRANSLATE("Translate"),
     QUALITY_CHECK("Quality check"),
+    REVISE("Revise translation"),
     FINALIZE("Finalize");
 
     private final String desc;

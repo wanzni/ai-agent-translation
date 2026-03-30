@@ -16,7 +16,13 @@ public class AgentTaskResultEvent {
 
     private String finalResponse;
 
+    private String draftResponse;
+
     private Integer finalQualityScore;
+
+    private Boolean revisionApplied;
+
+    private String revisionSummary;
 
     private Boolean needHumanReview;
 

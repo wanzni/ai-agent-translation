@@ -1,9 +1,11 @@
 package cn.net.wanzni.ai.translation.controller;
 
+import cn.net.wanzni.ai.translation.dto.MembershipPlanResponse;
+import cn.net.wanzni.ai.translation.dto.MembershipCurrentResponse;
 import cn.net.wanzni.ai.translation.dto.MembershipSubscribeRequest;
 import cn.net.wanzni.ai.translation.entity.UserMembership;
-import cn.net.wanzni.ai.translation.dto.MembershipPlanResponse;
 import cn.net.wanzni.ai.translation.enums.MembershipTypeEnum;
+import cn.net.wanzni.ai.translation.security.UserContext;
 import cn.net.wanzni.ai.translation.service.MembershipService;
 import cn.net.wanzni.ai.translation.service.PointsService;
 import lombok.RequiredArgsConstructor;
@@ -52,9 +54,33 @@ public class MembershipController {
      * 此端点接收会员订阅请求，计算会员有效期和配额，然后调用 {@link MembershipService} 完成订阅。
      * 成功开通会员后，还会根据配置赠送一定数量的积分。
      *
-     * @param payload 包含用户ID和会员类型的订阅请求
      * @return {@link UserMembership} 创建或更新后的会员信息
      */
+    @GetMapping("/current")
+    public MembershipCurrentResponse current() {
+        Long userId = UserContext.getUserId();
+        UserMembership membership = membershipService.getActiveMembership(userId);
+        if (membership == null) {
+            return MembershipCurrentResponse.builder()
+                    .active(false)
+                    .periodQuota(0L)
+                    .periodUsed(0L)
+                    .remainingQuota(0L)
+                    .build();
+        }
+        return MembershipCurrentResponse.builder()
+                .active(membership.isActiveNow())
+                .type(membership.getType() == null ? null : membership.getType().name())
+                .typeDesc(membership.getType() == null ? null : membership.getType().getDesc())
+                .status(membership.getStatus() == null ? null : membership.getStatus().name())
+                .startAt(membership.getStartAt())
+                .endAt(membership.getEndAt())
+                .periodQuota(membership.getPeriodQuota())
+                .periodUsed(membership.getPeriodUsed())
+                .remainingQuota(membership.remainingQuota())
+                .build();
+    }
+
     @PostMapping("/subscribe")
     public UserMembership subscribe(@Validated @RequestBody MembershipSubscribeRequest payload) {
         log.info("会员开通请求: userId={}, type={}", payload.getUserId(), payload.getType());

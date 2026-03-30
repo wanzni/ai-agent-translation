@@ -10,6 +10,7 @@ import cn.net.wanzni.ai.translation.dto.agent.AgentTaskTimelineResponse;
 import cn.net.wanzni.ai.translation.entity.AgentTask;
 import cn.net.wanzni.ai.translation.entity.AgentTaskStep;
 import cn.net.wanzni.ai.translation.entity.ReviewTask;
+import cn.net.wanzni.ai.translation.enums.AgentStepTypeEnum;
 import cn.net.wanzni.ai.translation.enums.AgentTaskStatusEnum;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -21,6 +22,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -98,11 +100,18 @@ public class AgentTaskEventStreamService {
                 .build());
     }
 
-    public void publishResult(AgentTask task, ReviewTask reviewTask) {
+    public void publishResult(AgentTask task,
+                              ReviewTask reviewTask,
+                              String draftResponse,
+                              Boolean revisionApplied,
+                              String revisionSummary) {
         broadcast(task.getId(), "result", AgentTaskResultEvent.builder()
                 .taskId(task.getId())
                 .finalResponse(task.getFinalResponse())
+                .draftResponse(draftResponse)
                 .finalQualityScore(task.getFinalQualityScore())
+                .revisionApplied(revisionApplied)
+                .revisionSummary(revisionSummary)
                 .needHumanReview(task.getNeedHumanReview())
                 .reviewTaskId(reviewTask != null ? reviewTask.getId() : null)
                 .reviewStatus(reviewTask != null ? reviewTask.getReviewStatus() : null)
@@ -173,16 +182,58 @@ public class AgentTaskEventStreamService {
     }
 
     private AgentTaskResultEvent buildResultEvent(AgentTaskResponse task, AgentTaskTimelineResponse timeline) {
+        Map<String, Object> reviseOutput = findLatestStepOutput(timeline, AgentStepTypeEnum.REVISE);
         return AgentTaskResultEvent.builder()
                 .taskId(task.getId())
                 .finalResponse(task.getFinalResponse())
+                .draftResponse(asText(reviseOutput.get("draftText")))
                 .finalQualityScore(task.getFinalQualityScore())
+                .revisionApplied(asBoolean(reviseOutput.get("revisionApplied")))
+                .revisionSummary(asText(reviseOutput.get("revisionSummary")))
                 .needHumanReview(task.getNeedHumanReview())
                 .reviewTaskId(timeline.getReviewTaskId())
                 .reviewStatus(timeline.getReviewStatus())
                 .reviewReasonCode(timeline.getReviewReasonCode())
                 .selectedModel(task.getSelectedModel())
                 .build();
+    }
+
+    private Map<String, Object> findLatestStepOutput(AgentTaskTimelineResponse timeline, AgentStepTypeEnum stepType) {
+        if (timeline == null || timeline.getSteps() == null) {
+            return Map.of();
+        }
+        return timeline.getSteps().stream()
+                .filter(Objects::nonNull)
+                .filter(step -> stepType == step.getStepType())
+                .reduce((first, second) -> second)
+                .map(step -> parseJson(step.getOutputJson()))
+                .orElse(Map.of());
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> parseJson(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return Map.of();
+        }
+        try {
+            return objectMapper.readValue(raw, Map.class);
+        } catch (Exception e) {
+            return Map.of();
+        }
+    }
+
+    private String asText(Object value) {
+        return value == null ? null : String.valueOf(value);
+    }
+
+    private Boolean asBoolean(Object value) {
+        if (value instanceof Boolean bool) {
+            return bool;
+        }
+        if (value instanceof String text) {
+            return Boolean.valueOf(text);
+        }
+        return null;
     }
 
     private String toJson(Object payload) {

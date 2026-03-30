@@ -25,6 +25,7 @@ import cn.net.wanzni.ai.translation.service.TranslationService;
 import cn.net.wanzni.ai.translation.service.agent.AgentWorkflowService;
 import cn.net.wanzni.ai.translation.service.llm.RagService;
 import cn.net.wanzni.ai.translation.service.sse.AgentTaskEventStreamService;
+import cn.net.wanzni.ai.translation.service.translation.QwenTranslationService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -34,6 +35,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,6 +49,7 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
     private final AgentTaskStepRepository agentTaskStepRepository;
     private final RagService ragService;
     private final TranslationService translationService;
+    private final QwenTranslationService qwenTranslationService;
     private final TranslationMemoryService translationMemoryService;
     private final TranslationRecordRepository translationRecordRepository;
     private final ReviewTaskRepository reviewTaskRepository;
@@ -60,6 +63,7 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
                                     AgentTaskStepRepository agentTaskStepRepository,
                                     RagService ragService,
                                     TranslationService translationService,
+                                    QwenTranslationService qwenTranslationService,
                                     TranslationMemoryService translationMemoryService,
                                     TranslationRecordRepository translationRecordRepository,
                                     ReviewTaskRepository reviewTaskRepository,
@@ -72,6 +76,7 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
         this.agentTaskStepRepository = agentTaskStepRepository;
         this.ragService = ragService;
         this.translationService = translationService;
+        this.qwenTranslationService = qwenTranslationService;
         this.translationMemoryService = translationMemoryService;
         this.translationRecordRepository = translationRecordRepository;
         this.reviewTaskRepository = reviewTaskRepository;
@@ -118,9 +123,10 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
             executePlanStep(task, translationRequest);
             RagContext ragContext = executeRetrieveStep(task, translationRequest);
             TranslationResponse translationResponse = executeTranslateStep(task, translationRequest, ragContext);
-            QualityAssessmentResponse qualityResponse = executeQualityStep(task, translationRequest, translationResponse);
-            boolean tmStored = saveTranslationMemory(task, translationRequest, translationResponse, qualityResponse);
-            finalizeTaskSuccess(task.getId(), translationResponse, qualityResponse, tmStored);
+            RevisionExecution revisionExecution = executeRevisionLoop(task, translationRequest, translationResponse);
+            syncLatestTranslationRecord(task.getId(), revisionExecution.finalText());
+            boolean tmStored = saveTranslationMemory(task, translationRequest, revisionExecution.finalText(), revisionExecution.finalQualityResponse());
+            finalizeTaskSuccess(task.getId(), translationResponse, revisionExecution, tmStored);
         } catch (Exception e) {
             log.error("Workflow execution failed for task {}: {}", taskId, e.getMessage(), e);
             finalizeTaskFailure(task.getId(), e);
@@ -144,10 +150,10 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
                 "textLength", request.getCharacterCount()
         );
         Map<String, Object> output = new LinkedHashMap<>();
-        output.put("plan", List.of("PLAN", "RETRIEVE_TERMINOLOGY", "TRANSLATE", "QUALITY_CHECK", "FINALIZE"));
+        output.put("plan", List.of("PLAN", "RETRIEVE_TERMINOLOGY", "TRANSLATE", "QUALITY_CHECK", "REVISE(optional)", "FINALIZE"));
         output.put("useRag", request.getUseRag());
         output.put("useTerminology", request.getUseTerminology());
-        saveStep(task.getId(), 2, AgentStepTypeEnum.PLAN, "Plan task", null, null, input, output, AgentStepStatusEnum.SUCCESS, 0L, null);
+        saveStep(task.getId(), AgentStepTypeEnum.PLAN, "Plan task", null, null, input, output, AgentStepStatusEnum.SUCCESS, 0L, null);
         updateCurrentStep(task.getId(), AgentStepTypeEnum.RETRIEVE_TERMINOLOGY.name());
     }
 
@@ -169,13 +175,13 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
             output.put("tmHitCount", tmHistoryCount);
             output.put("historyFallbackCount", fallbackHistoryCount);
             output.put("buildTimeMs", ragContext.getBuildTimeMs());
-            saveStep(task.getId(), 3, AgentStepTypeEnum.RETRIEVE_TERMINOLOGY, "Retrieve terminology and context",
+            saveStep(task.getId(), AgentStepTypeEnum.RETRIEVE_TERMINOLOGY, "Retrieve terminology and context",
                     "rag_service", null, buildRequestInput(request), output, AgentStepStatusEnum.SUCCESS,
                     System.currentTimeMillis() - start, null);
             updateCurrentStep(task.getId(), AgentStepTypeEnum.TRANSLATE.name());
             return ragContext;
         } catch (Exception e) {
-            saveStep(task.getId(), 3, AgentStepTypeEnum.RETRIEVE_TERMINOLOGY, "Retrieve terminology and context",
+            saveStep(task.getId(), AgentStepTypeEnum.RETRIEVE_TERMINOLOGY, "Retrieve terminology and context",
                     "rag_service", null, buildRequestInput(request), Map.of("warning", "RAG retrieval failed"),
                     AgentStepStatusEnum.FAILED, System.currentTimeMillis() - start, e.getMessage());
             throw e;
@@ -193,7 +199,7 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
         output.put("usedTerminology", response.getUsedTerminology());
         output.put("qualityScore", response.getQualityScore());
         output.put("translatedText", response.getTranslatedText());
-        saveStep(task.getId(), 4, AgentStepTypeEnum.TRANSLATE, "Execute translation",
+        saveStep(task.getId(), AgentStepTypeEnum.TRANSLATE, "Execute translation",
                 "translation_service", response.getTranslationEngine(), buildRequestInput(request), output,
                 response.isSuccessful() ? AgentStepStatusEnum.SUCCESS : AgentStepStatusEnum.FAILED,
                 System.currentTimeMillis() - start, response.getErrorMessage());
@@ -204,36 +210,163 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
         return response;
     }
 
-    private QualityAssessmentResponse executeQualityStep(AgentTask task, TranslationRequest request, TranslationResponse translationResponse) throws Exception {
+    private QualityStepResult executeQualityStep(AgentTask task,
+                                                 TranslationRequest request,
+                                                 Long translationId,
+                                                 String targetText,
+                                                 String phase,
+                                                 boolean reviseSupported) throws Exception {
         long start = System.currentTimeMillis();
         QualityAssessmentRequest qualityRequest = QualityAssessmentRequest.builder()
-                .translationRecordId(translationResponse.getTranslationId())
+                .translationRecordId(translationId)
                 .sourceText(request.getSourceText())
-                .targetText(translationResponse.getTranslatedText())
+                .targetText(targetText)
                 .sourceLanguage(request.getSourceLanguage())
                 .targetLanguage(request.getTargetLanguage())
                 .glossaryMap(extractGlossaryMap(request))
                 .save(true)
                 .build();
         QualityAssessmentResponse qualityResponse = qualityAssessmentService.assess(qualityRequest);
+        List<String> failedRuleTypes = deriveFailedRuleTypes(qualityResponse);
+        String reviseDecision = decideReviseDecision(qualityResponse, failedRuleTypes, phase, reviseSupported);
+        String reviseSkipReason = resolveReviseSkipReason(qualityResponse, failedRuleTypes, phase, reviseSupported);
         Map<String, Object> output = new LinkedHashMap<>();
+        output.put("phase", phase);
         output.put("overallScore", qualityResponse.getOverallScore());
         output.put("numberScore", qualityResponse.getNumberScore());
         output.put("terminologyScore", qualityResponse.getTerminologyScore());
+        output.put("formatScore", qualityResponse.getFormatScore());
         output.put("qualityLevel", qualityResponse.getQualityLevel());
         output.put("assessmentEngine", qualityResponse.getAssessmentEngine());
         output.put("assessmentTime", qualityResponse.getAssessmentTime());
         output.put("tmEligible", qualityResponse.getTmEligible());
         output.put("tmRejectReasons", qualityResponse.getTmRejectReasons());
+        output.put("needsRetry", qualityResponse.getNeedsRetry());
+        output.put("needsHumanReview", qualityResponse.getNeedsHumanReview());
         output.put("hardRulePassed", qualityResponse.getHardRulePassed());
         output.put("sensitiveContentDetected", qualityResponse.getSensitiveContentDetected());
+        output.put("failedRuleTypes", failedRuleTypes);
+        output.put("reviseDecision", reviseDecision);
+        output.put("reviseSupported", reviseSupported);
+        output.put("reviseSkipReason", reviseSkipReason);
         Map<String, Object> input = new LinkedHashMap<>();
-        input.put("translationId", translationResponse.getTranslationId());
-        saveStep(task.getId(), 5, AgentStepTypeEnum.QUALITY_CHECK, "Assess translation quality",
+        input.put("translationId", translationId);
+        input.put("phase", phase);
+        saveStep(task.getId(), AgentStepTypeEnum.QUALITY_CHECK, "Assess translation quality",
                 "quality_assessment", qualityResponse.getAssessmentEngine(), input,
                 output, AgentStepStatusEnum.SUCCESS, System.currentTimeMillis() - start, null);
-        updateCurrentStep(task.getId(), AgentStepTypeEnum.FINALIZE.name());
-        return qualityResponse;
+        return new QualityStepResult(qualityResponse, failedRuleTypes, reviseDecision);
+    }
+
+    private RevisionExecution executeRevisionLoop(AgentTask task,
+                                                  TranslationRequest request,
+                                                  TranslationResponse translationResponse) throws Exception {
+        String draftText = translationResponse.getTranslatedText();
+        boolean reviseSupported = supportsAutoRevise(task);
+        QualityStepResult initialQuality = executeQualityStep(
+                task,
+                request,
+                translationResponse.getTranslationId(),
+                draftText,
+                "INITIAL",
+                reviseSupported
+        );
+
+        if (Boolean.TRUE.equals(initialQuality.response().getSensitiveContentDetected())) {
+            return new RevisionExecution(draftText, draftText, initialQuality.response(), false, null, null);
+        }
+
+        if (initialQuality.failedRuleTypes().isEmpty()) {
+            return new RevisionExecution(draftText, draftText, initialQuality.response(), false, null, null);
+        }
+
+        if (!reviseSupported) {
+            return new RevisionExecution(draftText, draftText, initialQuality.response(), false,
+                    "Selected engine does not support auto revise in v1", "MANUAL_REVIEW_REQUIRED");
+        }
+
+        updateCurrentStep(task.getId(), AgentStepTypeEnum.REVISE.name());
+        ReviseStepResult reviseStepResult = executeReviseStep(task, request, draftText, initialQuality.failedRuleTypes());
+        if (reviseStepResult == null || !Boolean.TRUE.equals(reviseStepResult.revisionApplied())) {
+            return new RevisionExecution(draftText, draftText, initialQuality.response(), false,
+                    "Auto revise did not produce a usable revision", "MANUAL_REVIEW_REQUIRED");
+        }
+
+        updateCurrentStep(task.getId(), AgentStepTypeEnum.QUALITY_CHECK.name());
+        QualityStepResult postReviseQuality = executeQualityStep(
+                task,
+                request,
+                translationResponse.getTranslationId(),
+                reviseStepResult.revisedText(),
+                "POST_REVISE",
+                reviseSupported
+        );
+
+        if (!postReviseQuality.failedRuleTypes().isEmpty()) {
+            return new RevisionExecution(
+                    draftText,
+                    reviseStepResult.revisedText(),
+                    postReviseQuality.response(),
+                    true,
+                    reviseStepResult.revisionSummary(),
+                    "AUTO_REVISE_FAILED"
+            );
+        }
+
+        return new RevisionExecution(
+                draftText,
+                reviseStepResult.revisedText(),
+                postReviseQuality.response(),
+                true,
+                reviseStepResult.revisionSummary(),
+                null
+        );
+    }
+
+    private ReviseStepResult executeReviseStep(AgentTask task,
+                                               TranslationRequest request,
+                                               String draftText,
+                                               List<String> failedRuleTypes) {
+        long start = System.currentTimeMillis();
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("draftText", draftText);
+        input.put("failedRuleTypes", failedRuleTypes);
+        input.put("sourceLanguage", request.getSourceLanguage());
+        input.put("targetLanguage", request.getTargetLanguage());
+
+        try {
+            String userPrompt = buildRevisePrompt(request, draftText, failedRuleTypes);
+            String revisedText = qwenTranslationService.complete(
+                    "You are a professional translation reviewer. Fix only the requested hard-rule issues and output only the corrected target text.",
+                    userPrompt
+            );
+            if (!StringUtils.hasText(revisedText)) {
+                throw new IllegalStateException("Revise step returned empty text");
+            }
+
+            String normalized = revisedText.trim();
+            String summary = buildRevisionSummary(failedRuleTypes);
+            Map<String, Object> output = new LinkedHashMap<>();
+            output.put("draftText", draftText);
+            output.put("revisedText", normalized);
+            output.put("appliedFixTypes", failedRuleTypes);
+            output.put("revisionApplied", true);
+            output.put("revisionSummary", summary);
+            saveStep(task.getId(), AgentStepTypeEnum.REVISE, "Revise hard-rule issues",
+                    "auto_revise", task.getSelectedModel(), input, output, AgentStepStatusEnum.SUCCESS,
+                    System.currentTimeMillis() - start, null);
+            return new ReviseStepResult(normalized, true, summary);
+        } catch (Exception e) {
+            Map<String, Object> output = new LinkedHashMap<>();
+            output.put("draftText", draftText);
+            output.put("revisionApplied", false);
+            output.put("appliedFixTypes", failedRuleTypes);
+            saveStep(task.getId(), AgentStepTypeEnum.REVISE, "Revise hard-rule issues",
+                    "auto_revise", task.getSelectedModel(), input, output, AgentStepStatusEnum.FAILED,
+                    System.currentTimeMillis() - start, buildErrorMessage(e));
+            log.warn("Revise step failed for task {}: {}", task.getId(), e.getMessage());
+            return null;
+        }
     }
 
     @Transactional
@@ -241,15 +374,35 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
                                        TranslationResponse translationResponse,
                                        QualityAssessmentResponse qualityResponse,
                                        boolean tmStored) {
+        finalizeTaskSuccess(
+                taskId,
+                translationResponse,
+                new RevisionExecution(
+                        translationResponse != null ? translationResponse.getTranslatedText() : null,
+                        translationResponse != null ? translationResponse.getTranslatedText() : null,
+                        qualityResponse,
+                        false,
+                        null,
+                        null
+                ),
+                tmStored
+        );
+    }
+
+    @Transactional
+    protected void finalizeTaskSuccess(Long taskId,
+                                       TranslationResponse translationResponse,
+                                       RevisionExecution revisionExecution,
+                                       boolean tmStored) {
         AgentTask task = agentTaskRepository.findById(taskId)
                 .orElseThrow(() -> new ResourceNotFoundException("Agent task not found: " + taskId));
-        ReviewTaskCreationResult reviewTaskResult = createReviewTaskIfNeeded(task, translationResponse, qualityResponse);
+        ReviewTaskCreationResult reviewTaskResult = createReviewTaskIfNeeded(task, translationResponse, revisionExecution);
         ReviewTask reviewTask = reviewTaskResult.reviewTask();
         task.setStatus(AgentTaskStatusEnum.COMPLETED);
         task.setCurrentStep(AgentStepTypeEnum.FINALIZE.name());
-        task.setFinalResponse(translationResponse.getTranslatedText());
+        task.setFinalResponse(revisionExecution.finalText());
         task.setSelectedModel(translationResponse.getTranslationEngine());
-        task.setFinalQualityScore(qualityResponse != null ? qualityResponse.getOverallScore() : null);
+        task.setFinalQualityScore(revisionExecution.finalQualityResponse() != null ? revisionExecution.finalQualityResponse().getOverallScore() : null);
         task.setNeedHumanReview(reviewTask != null);
         task.setCompletedAt(LocalDateTime.now());
         agentTaskRepository.save(task);
@@ -258,23 +411,33 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
         output.put("status", task.getStatus());
         output.put("finalQualityScore", task.getFinalQualityScore());
         output.put("translationId", translationResponse.getTranslationId());
+        output.put("draftResponse", revisionExecution.draftText());
+        output.put("finalResponse", revisionExecution.finalText());
+        output.put("revisionApplied", revisionExecution.revisionApplied());
+        output.put("revisionSummary", revisionExecution.revisionSummary());
         output.put("tmStored", tmStored);
-        output.put("tmRejectedReasons", qualityResponse != null ? qualityResponse.getTmRejectReasons() : List.of());
-        output.put("needHumanReview", qualityResponse != null && Boolean.TRUE.equals(qualityResponse.getNeedsHumanReview()));
+        output.put("tmRejectedReasons", revisionExecution.finalQualityResponse() != null ? revisionExecution.finalQualityResponse().getTmRejectReasons() : List.of());
+        output.put("needHumanReview", reviewTask != null);
         output.put("reviewTaskCreated", reviewTaskResult.created());
         output.put("reviewReasonCode", reviewTask != null ? reviewTask.getReasonCode() : null);
-        saveStep(taskId, 6, AgentStepTypeEnum.FINALIZE, "Finalize task", null, task.getSelectedModel(),
+        saveStep(taskId, AgentStepTypeEnum.FINALIZE, "Finalize task", null, task.getSelectedModel(),
                 Map.of("taskId", taskId), output, AgentStepStatusEnum.SUCCESS, 0L, null);
         agentTaskEventStreamService.publishTaskUpdate(task, reviewTask);
-        agentTaskEventStreamService.publishResult(task, reviewTask);
+        agentTaskEventStreamService.publishResult(task, reviewTask,
+                revisionExecution.draftText(),
+                revisionExecution.revisionApplied(),
+                revisionExecution.revisionSummary());
         agentTaskEventStreamService.publishDone(taskId, task.getStatus());
         agentTaskEventStreamService.completeTask(taskId);
     }
 
     private ReviewTaskCreationResult createReviewTaskIfNeeded(AgentTask task,
                                                               TranslationResponse translationResponse,
-                                                              QualityAssessmentResponse qualityResponse) {
-        if (qualityResponse == null || !Boolean.TRUE.equals(qualityResponse.getNeedsHumanReview())) {
+                                                              RevisionExecution revisionExecution) {
+        QualityAssessmentResponse qualityResponse = revisionExecution.finalQualityResponse();
+        String overrideReasonCode = revisionExecution.reviewReasonCode();
+        if ((qualityResponse == null || !Boolean.TRUE.equals(qualityResponse.getNeedsHumanReview()))
+                && !StringUtils.hasText(overrideReasonCode)) {
             return new ReviewTaskCreationResult(null, false);
         }
 
@@ -289,9 +452,9 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
         String bizId = translationResponse != null && translationResponse.getTranslationId() != null
                 ? String.valueOf(translationResponse.getTranslationId())
                 : String.valueOf(task.getId());
-        String reasonCode = resolveReviewReasonCode(qualityResponse);
-        String issueSummary = buildIssueSummary(qualityResponse);
-        String suggestedText = translationResponse != null ? translationResponse.getTranslatedText() : null;
+        String reasonCode = StringUtils.hasText(overrideReasonCode) ? overrideReasonCode : resolveReviewReasonCode(qualityResponse);
+        String issueSummary = buildIssueSummary(qualityResponse, revisionExecution);
+        String suggestedText = revisionExecution.finalText();
 
         ReviewTask reviewTask = reviewTaskService.createPendingReviewTask(
                 task.getId(),
@@ -312,12 +475,12 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
 
     private boolean saveTranslationMemory(AgentTask task,
                                           TranslationRequest request,
-                                          TranslationResponse translationResponse,
+                                          String finalText,
                                           QualityAssessmentResponse qualityResponse) {
         try {
             return translationMemoryService.saveApprovedPair(
                     request.getSourceText(),
-                    translationResponse.getTranslatedText(),
+                    finalText,
                     request.getSourceLanguage(),
                     request.getTargetLanguage(),
                     request.getDomain(),
@@ -346,7 +509,7 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
         task.setCompletedAt(LocalDateTime.now());
         agentTaskRepository.save(task);
 
-        saveStep(taskId, 6, AgentStepTypeEnum.FINALIZE, "Finalize task", null, null,
+        saveStep(taskId, AgentStepTypeEnum.FINALIZE, "Finalize task", null, null,
                 Map.of("taskId", taskId), Map.of("status", "FAILED"),
                 AgentStepStatusEnum.FAILED, 0L, errorMessage);
         agentTaskEventStreamService.publishTaskUpdate(task, null);
@@ -365,7 +528,6 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
 
     @Transactional
     protected void saveStep(Long taskId,
-                            int stepNo,
                             AgentStepTypeEnum stepType,
                             String stepName,
                             String toolName,
@@ -377,7 +539,7 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
                             String errorMessage) {
         AgentTaskStep step = AgentTaskStep.builder()
                 .taskId(taskId)
-                .stepNo(stepNo)
+                .stepNo(nextStepNo(taskId))
                 .stepType(stepType)
                 .stepName(stepName)
                 .toolName(toolName)
@@ -390,6 +552,10 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
                 .build();
         AgentTaskStep savedStep = agentTaskStepRepository.save(step);
         agentTaskEventStreamService.publishStepUpdate(savedStep);
+    }
+
+    private int nextStepNo(Long taskId) {
+        return Math.toIntExact(agentTaskStepRepository.countByTaskId(taskId) + 1);
     }
 
     private Map<String, Object> buildRequestInput(TranslationRequest request) {
@@ -463,13 +629,125 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
         return "MANUAL_REVIEW_REQUIRED";
     }
 
-    private String buildIssueSummary(QualityAssessmentResponse qualityResponse) {
+    private String buildIssueSummary(QualityAssessmentResponse qualityResponse, RevisionExecution revisionExecution) {
         Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("overallScore", qualityResponse != null ? qualityResponse.getOverallScore() : null);
         summary.put("qualityLevel", qualityResponse != null ? qualityResponse.getQualityLevel() : null);
         summary.put("tmRejectReasons", qualityResponse != null ? qualityResponse.getTmRejectReasons() : List.of());
         summary.put("sensitiveContentDetected", qualityResponse != null && Boolean.TRUE.equals(qualityResponse.getSensitiveContentDetected()));
+        summary.put("revisionApplied", revisionExecution != null && Boolean.TRUE.equals(revisionExecution.revisionApplied()));
+        summary.put("revisionSummary", revisionExecution != null ? revisionExecution.revisionSummary() : null);
+        summary.put("draftResponse", revisionExecution != null ? revisionExecution.draftText() : null);
+        summary.put("finalResponse", revisionExecution != null ? revisionExecution.finalText() : null);
         return toJson(summary);
+    }
+
+    private List<String> deriveFailedRuleTypes(QualityAssessmentResponse qualityResponse) {
+        List<String> failedRuleTypes = new ArrayList<>();
+        if (qualityResponse == null) {
+            return failedRuleTypes;
+        }
+        if (qualityResponse.getNumberScore() != null && qualityResponse.getNumberScore() < 100) {
+            failedRuleTypes.add("NUMBER");
+        }
+        if (qualityResponse.getTerminologyScore() != null && qualityResponse.getTerminologyScore() < 100) {
+            failedRuleTypes.add("TERMINOLOGY");
+        }
+        if (qualityResponse.getFormatScore() != null && qualityResponse.getFormatScore() < 100) {
+            failedRuleTypes.add("FORMAT");
+        }
+        return failedRuleTypes;
+    }
+
+    private String decideReviseDecision(QualityAssessmentResponse qualityResponse,
+                                        List<String> failedRuleTypes,
+                                        String phase,
+                                        boolean reviseSupported) {
+        if (qualityResponse != null && Boolean.TRUE.equals(qualityResponse.getSensitiveContentDetected())) {
+            return "HUMAN_REVIEW";
+        }
+        if ("POST_REVISE".equalsIgnoreCase(phase) && !failedRuleTypes.isEmpty()) {
+            return "HUMAN_REVIEW";
+        }
+        if (!failedRuleTypes.isEmpty()) {
+            return reviseSupported ? "REVISE" : "HUMAN_REVIEW";
+        }
+        return "FINALIZE";
+    }
+
+    private String resolveReviseSkipReason(QualityAssessmentResponse qualityResponse,
+                                           List<String> failedRuleTypes,
+                                           String phase,
+                                           boolean reviseSupported) {
+        if (qualityResponse != null && Boolean.TRUE.equals(qualityResponse.getSensitiveContentDetected())) {
+            return "SENSITIVE_CONTENT";
+        }
+        if ("POST_REVISE".equalsIgnoreCase(phase)) {
+            return failedRuleTypes.isEmpty() ? "POST_REVISE_PASSED" : "POST_REVISE_FAILED";
+        }
+        if (failedRuleTypes == null || failedRuleTypes.isEmpty()) {
+            return "QUALITY_PASSED";
+        }
+        if (!reviseSupported) {
+            return "ENGINE_UNSUPPORTED";
+        }
+        return "REVISE_TRIGGERED";
+    }
+
+    private boolean supportsAutoRevise(AgentTask task) {
+        return task != null && "QWEN".equalsIgnoreCase(task.getSelectedModel());
+    }
+
+    private String buildRevisePrompt(TranslationRequest request, String draftText, List<String> failedRuleTypes) {
+        StringBuilder prompt = new StringBuilder();
+        prompt.append("[Source Text]\n").append(request.getSourceText()).append("\n\n");
+        prompt.append("[Draft Translation]\n").append(draftText).append("\n\n");
+        prompt.append("[Target Language]\n").append(request.getTargetLanguage()).append("\n\n");
+        prompt.append("[Fix Types]\n").append(String.join(", ", failedRuleTypes)).append("\n");
+        prompt.append("- NUMBER: fix numbers and units only.\n");
+        prompt.append("- TERMINOLOGY: align with glossary terminology if present.\n");
+        prompt.append("- FORMAT: preserve punctuation, spacing and formatting.\n\n");
+        prompt.append("[Requirements]\n");
+        prompt.append("1. Keep the original meaning unchanged.\n");
+        prompt.append("2. Fix only the listed hard-rule issues.\n");
+        prompt.append("3. Output only the corrected target text.\n");
+        return prompt.toString();
+    }
+
+    private String buildRevisionSummary(List<String> failedRuleTypes) {
+        if (failedRuleTypes == null || failedRuleTypes.isEmpty()) {
+            return "No hard-rule revision applied";
+        }
+        return "Auto revised: " + String.join(", ", failedRuleTypes);
+    }
+
+    private void syncLatestTranslationRecord(Long taskId, String finalText) {
+        if (!StringUtils.hasText(finalText)) {
+            return;
+        }
+        translationRecordRepository.findFirstByAgentTaskIdOrderByCreatedAtDesc(taskId)
+                .ifPresent(record -> {
+                    record.setTranslatedText(finalText);
+                    translationRecordRepository.save(record);
+                });
+    }
+
+    private record QualityStepResult(QualityAssessmentResponse response,
+                                     List<String> failedRuleTypes,
+                                     String reviseDecision) {
+    }
+
+    private record ReviseStepResult(String revisedText,
+                                    Boolean revisionApplied,
+                                    String revisionSummary) {
+    }
+
+    private record RevisionExecution(String draftText,
+                                     String finalText,
+                                     QualityAssessmentResponse finalQualityResponse,
+                                     Boolean revisionApplied,
+                                     String revisionSummary,
+                                     String reviewReasonCode) {
     }
 
     private record ReviewTaskCreationResult(ReviewTask reviewTask, boolean created) {

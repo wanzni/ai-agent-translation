@@ -8,184 +8,269 @@
             .membership-header {
                 color: #0f172a;
             }
+
+            .membership-summary {
+                min-height: 100%;
+            }
         </style>
     </th:block>
 </head>
 <body>
 <th:block th:fragment="content">
-<div class="container py-4">
-    <div class="row mb-3">
-        <div class="col-12">
-            <h2 class="fw-bold membership-header">开通会员</h2>
-            <p class="text-muted">会员每月获得 <span id="headerQuota">5000</span> 点额度，支持包月、包季、包年。</p>
+    <div class="container py-4">
+        <div class="row mb-3">
+            <div class="col-12">
+                <h2 class="fw-bold membership-header">开通会员</h2>
+                <p class="text-muted">会员每月获得 <span id="headerQuota">5000</span> 点额度，支持包月、包季、包年三种套餐。</p>
+            </div>
         </div>
-    </div>
 
-    <div class="row mb-4">
-        <div class="col-md-6 col-lg-4">
-            <div class="card shadow-sm h-100">
-                <div class="card-body">
-                    <h5 class="card-title"><i class="fas fa-crown text-warning me-2"></i>包月会员</h5>
-                    <p class="card-text mb-1">每月额度：<span id="monthlyQuota">5000</span> 点</p>
-                    <p class="card-text mb-1">价格：¥<span id="monthlyPrice">49</span>/月</p>
-                    <p class="card-text mb-0">周期：1个月</p>
-                    <button class="btn btn-primary w-100" data-type="MONTHLY" id="subscribeMonthlyBtn">开通包月</button>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-6 col-lg-4">
-            <div class="card shadow-sm h-100">
-                <div class="card-body">
-                    <h5 class="card-title"><i class="fas fa-gem text-info me-2"></i>包季会员</h5>
-                    <p class="card-text mb-1">每月额度：<span id="quarterlyQuota">5000</span> 点</p>
-                    <p class="card-text mb-1">价格：¥<span id="quarterlyPrice">139</span>/季</p>
-                    <p class="card-text mb-0">周期：3个月</p>
-                    <button class="btn btn-info w-100" data-type="QUARTERLY" id="subscribeQuarterlyBtn">开通包季</button>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-6 col-lg-4">
-            <div class="card shadow-sm h-100">
-                <div class="card-body">
-                    <h5 class="card-title"><i class="fas fa-shield-heart text-success me-2"></i>包年会员</h5>
-                    <p class="card-text mb-1">每月额度：<span id="yearlyQuota">5000</span> 点</p>
-                    <p class="card-text mb-1">价格：¥<span id="yearlyPrice">299</span>/年</p>
-                    <p class="card-text mb-0">周期：12个月</p>
-                    <button class="btn btn-success w-100" data-type="YEARLY" id="subscribeYearlyBtn">开通包年</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="row mb-4">
-        <div class="col-md-6">
-            <div class="card">
-                <div class="card-body">
-                    <h5 class="card-title">当前登录用户</h5>
-                    <div class="mb-3" id="userInputGroup">
-                        <label for="userIdInput" class="form-label">用户ID</label>
-                        <input type="text" class="form-control" id="userIdInput" placeholder="请输入用户ID" />
-                        <div class="form-text">已接入登录校验。登录后将自动使用当前用户开通。</div>
+        <div class="row mb-4 g-3">
+            <div class="col-md-6 col-lg-4">
+                <div class="card shadow-sm h-100">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="fas fa-crown text-warning me-2"></i>包月会员</h5>
+                        <p class="card-text mb-1">每月额度：<span id="monthlyQuota">5000</span> 点</p>
+                        <p class="card-text mb-1">价格：¥<span id="monthlyPrice">49</span> / 月</p>
+                        <p class="card-text mb-3">周期：1 个月</p>
+                        <button class="btn btn-primary w-100" id="subscribeMonthlyBtn">开通包月</button>
                     </div>
-                    <div class="mb-2 d-none" id="currentUserInfo"></div>
-                    <div id="subscribeStatus" class="alert d-none" role="alert"></div>
+                </div>
+            </div>
+            <div class="col-md-6 col-lg-4">
+                <div class="card shadow-sm h-100">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="fas fa-gem text-info me-2"></i>包季会员</h5>
+                        <p class="card-text mb-1">每月额度：<span id="quarterlyQuota">5000</span> 点</p>
+                        <p class="card-text mb-1">价格：¥<span id="quarterlyPrice">139</span> / 季</p>
+                        <p class="card-text mb-3">周期：3 个月</p>
+                        <button class="btn btn-info w-100 text-white" id="subscribeQuarterlyBtn">开通包季</button>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6 col-lg-4">
+                <div class="card shadow-sm h-100">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="fas fa-shield-heart text-success me-2"></i>包年会员</h5>
+                        <p class="card-text mb-1">每月额度：<span id="yearlyQuota">5000</span> 点</p>
+                        <p class="card-text mb-1">价格：¥<span id="yearlyPrice">299</span> / 年</p>
+                        <p class="card-text mb-3">周期：12 个月</p>
+                        <button class="btn btn-success w-100" id="subscribeYearlyBtn">开通包年</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-3">
+            <div class="col-lg-6">
+                <div class="card membership-summary">
+                    <div class="card-body">
+                        <h5 class="card-title">当前登录用户</h5>
+                        <div id="currentUserInfo" class="alert alert-secondary mb-3">正在读取登录状态...</div>
+                        <div id="membershipCurrentInfo" class="alert alert-light mb-3">正在读取会员状态...</div>
+                        <div id="subscribeStatus" class="alert d-none mb-0" role="alert"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-6">
+                <div class="card membership-summary">
+                    <div class="card-body">
+                        <h5 class="card-title">会员权益说明</h5>
+                        <ul class="mb-0 ps-3 text-muted">
+                            <li>开通成功后自动跳转到支付页，支付完成即时生效。</li>
+                            <li>会员状态、剩余配额和点数余额会和当前登录用户实时同步。</li>
+                            <li>如订单已创建，可前往“我的订单”查看状态或继续支付。</li>
+                        </ul>
+                        <div class="d-flex gap-2 mt-3">
+                            <a class="btn btn-outline-primary" href="/orders">我的订单</a>
+                            <a class="btn btn-outline-secondary" href="/">返回工作台</a>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-</div>
-
-<script>
-    function getAuthUser() {
-        try {
-            return JSON.parse(localStorage.getItem('authUser') || 'null');
-        } catch (_) { return null; }
-    }
-
-    async function loadPlans() {
-        try {
-            const resp = await fetch('/api/membership/plans', { headers: { 'Accept': 'application/json' } });
-            const apiData = await resp.json();
-            let result = apiData;
-            try { while (result && result.data) { result = result.data; } } catch (_) {}
-            const plans = Array.isArray(result) ? result : [];
-            const get = (type, field, def) => (plans.find(p => p.type === type)?.[field] ?? def);
-            document.getElementById('monthlyQuota').textContent = get('MONTHLY', 'monthlyQuota', 5000);
-            document.getElementById('monthlyPrice').textContent = get('MONTHLY', 'price', 49);
-            document.getElementById('quarterlyQuota').textContent = get('QUARTERLY', 'monthlyQuota', 5000);
-            document.getElementById('quarterlyPrice').textContent = get('QUARTERLY', 'price', 139);
-            document.getElementById('yearlyQuota').textContent = get('YEARLY', 'monthlyQuota', 5000);
-            document.getElementById('yearlyPrice').textContent = get('YEARLY', 'price', 299);
-        } catch (e) {
-            console.warn('加载会员方案失败', e);
-        }
-    }
-
-    async function subscribe(type) {
-        const user = getAuthUser();
-        const userId = user?.id ? String(user.id) : '';
-        const statusEl = document.getElementById('subscribeStatus');
-        statusEl.className = 'alert alert-info';
-        statusEl.textContent = '正在创建订单...';
-        statusEl.classList.remove('d-none');
-        if (!userId) {
-            statusEl.className = 'alert alert-warning';
-            statusEl.textContent = '请先登录后再开通会员';
-            const loginEl = document.getElementById('loginModal');
-            if (loginEl && window.bootstrap) {
-                try { new bootstrap.Modal(loginEl).show(); } catch (_) {}
-            } else {
-                const link = document.getElementById('navLoginLink');
-                if (link) link.click();
-            }
-            return;
-        }
-        try {
-            const resp = await fetch('/api/membership/order', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                body: JSON.stringify({ userId, type })
-            });
-            const api = await resp.json();
-            let result = api;
-            try { while (result && result.data) { result = result.data; } } catch (_) {}
-            if (resp.ok && result && result.orderNo) {
-                statusEl.className = 'alert alert-success';
-                statusEl.textContent = '订单创建成功，正在跳转到支付页面...';
-                const qs = new URLSearchParams({ orderNo: String(result.orderNo) });
-                setTimeout(() => { window.location.assign(`/membership/pay?${qs.toString()}`); }, 600);
-            } else {
-                const msg = (api && (api.message || api.error)) || '下单失败';
-                statusEl.className = 'alert alert-danger';
-                statusEl.textContent = '下单失败：' + msg;
-            }
-        } catch (e) {
-            statusEl.className = 'alert alert-danger';
-            statusEl.textContent = '网络或系统异常：' + e.message;
-        }
-    }
-
-    document.addEventListener('DOMContentLoaded', () => {
-        loadPlans().then(() => {
-            try {
-                const monthlyQuotaEl = document.getElementById('monthlyQuota');
-                const headerQuotaEl = document.getElementById('headerQuota');
-                if (monthlyQuotaEl && headerQuotaEl) headerQuotaEl.textContent = monthlyQuotaEl.textContent || '5000';
-            } catch (_) {}
-        });
-        document.getElementById('subscribeMonthlyBtn').addEventListener('click', () => subscribe('MONTHLY'));
-        document.getElementById('subscribeQuarterlyBtn').addEventListener('click', () => subscribe('QUARTERLY'));
-        document.getElementById('subscribeYearlyBtn').addEventListener('click', () => subscribe('YEARLY'));
-
-        // 登录态接入：自动填充并限制只能当前用户开通
-        const user = getAuthUser();
-        const userInput = document.getElementById('userIdInput');
-        const userGroup = document.getElementById('userInputGroup');
-        const infoEl = document.getElementById('currentUserInfo');
-        const statusEl = document.getElementById('subscribeStatus');
-        if (user && user.id) {
-            if (userInput) { userInput.value = String(user.id); userInput.setAttribute('readonly', 'readonly'); }
-            if (userGroup) userGroup.classList.add('d-none');
-            if (infoEl) {
-                infoEl.classList.remove('d-none');
-                const nickname = (user.nickname && user.nickname.trim()) ? user.nickname.trim() : 'AI用户';
-                infoEl.innerHTML = `<div class="alert alert-secondary mb-0"><i class="fas fa-user me-2"></i>当前用户：<strong>${nickname}</strong>（ID: ${user.id}）</div>`;
-            }
-        } else {
-            // 未登录时禁用开通按钮，引导用户登录
-            ['subscribeMonthlyBtn','subscribeQuarterlyBtn','subscribeYearlyBtn'].forEach(id => {
-                const btn = document.getElementById(id);
-                if (btn) btn.disabled = false; // 按钮仍可点击，但会弹出登录
-            });
-            if (statusEl) {
-                statusEl.className = 'alert alert-warning';
-                statusEl.textContent = '您还未登录，请先登录后再开通会员。';
-                statusEl.classList.remove('d-none');
-            }
-        }
-    });
-</script>
 </th:block>
-<th:block th:fragment="page-scripts"></th:block>
+
+<th:block th:fragment="page-scripts">
+    <script>
+        (function () {
+            function getAuthUser() {
+                try {
+                    return JSON.parse(localStorage.getItem('authUser') || 'null');
+                } catch (_) {
+                    return null;
+                }
+            }
+
+            function unwrapApiPayload(payload) {
+                if (payload && typeof payload === 'object' && Object.prototype.hasOwnProperty.call(payload, 'data')) {
+                    return payload.data;
+                }
+                return payload;
+            }
+
+            function authFetch(url, options) {
+                return window.authorizedFetch ? window.authorizedFetch(url, options) : fetch(url, options);
+            }
+
+            function normalizePlanType(type) {
+                if (typeof type === 'number') {
+                    return ['MONTHLY', 'QUARTERLY', 'YEARLY'][type] || String(type);
+                }
+                return String(type || '').toUpperCase();
+            }
+
+            function openLoginModal() {
+                const loginEl = document.getElementById('loginModal');
+                if (loginEl && window.bootstrap) {
+                    try {
+                        (bootstrap.Modal.getInstance(loginEl) || new bootstrap.Modal(loginEl)).show();
+                        return;
+                    } catch (_) {
+                        // ignore
+                    }
+                }
+                window.location.assign('/login');
+            }
+
+            async function loadPlans() {
+                try {
+                    const resp = await fetch('/api/membership/plans', { headers: { 'Accept': 'application/json' } });
+                    const result = unwrapApiPayload(await resp.json());
+                    const plans = Array.isArray(result) ? result : [];
+                    const get = (type, field, fallback) => {
+                        const plan = plans.find(p => normalizePlanType(p.type) === type);
+                        return plan && plan[field] != null ? plan[field] : fallback;
+                    };
+                    document.getElementById('monthlyQuota').textContent = get('MONTHLY', 'monthlyQuota', 5000);
+                    document.getElementById('monthlyPrice').textContent = get('MONTHLY', 'price', 49);
+                    document.getElementById('quarterlyQuota').textContent = get('QUARTERLY', 'monthlyQuota', 5000);
+                    document.getElementById('quarterlyPrice').textContent = get('QUARTERLY', 'price', 139);
+                    document.getElementById('yearlyQuota').textContent = get('YEARLY', 'monthlyQuota', 5000);
+                    document.getElementById('yearlyPrice').textContent = get('YEARLY', 'price', 299);
+                    document.getElementById('headerQuota').textContent = document.getElementById('monthlyQuota').textContent || '5000';
+                } catch (e) {
+                    console.warn('load membership plans failed', e);
+                }
+            }
+
+            async function loadCurrentMembership() {
+                try {
+                    const resp = await authFetch('/api/membership/current', { authPromptOn401: false });
+                    if (!resp.ok) return null;
+                    return unwrapApiPayload(await resp.json());
+                } catch (_) {
+                    return null;
+                }
+            }
+
+            async function loadPointsBalance() {
+                try {
+                    const resp = await authFetch('/api/points/balance', { authPromptOn401: false });
+                    if (!resp.ok) return null;
+                    const payload = unwrapApiPayload(await resp.json());
+                    return payload && payload.balance != null ? payload.balance : null;
+                } catch (_) {
+                    return null;
+                }
+            }
+
+            function renderUserState(user, membership, balance) {
+                const userInfoEl = document.getElementById('currentUserInfo');
+                const membershipInfoEl = document.getElementById('membershipCurrentInfo');
+                const subscribeStatusEl = document.getElementById('subscribeStatus');
+
+                if (!user || user.id == null) {
+                    userInfoEl.className = 'alert alert-warning mb-3';
+                    userInfoEl.innerHTML = '当前未登录，请先登录后再开通会员。';
+                    membershipInfoEl.className = 'alert alert-light mb-3';
+                    membershipInfoEl.innerHTML = '登录后可查看当前会员状态、剩余配额和点数余额。';
+                    subscribeStatusEl.classList.add('d-none');
+                    return;
+                }
+
+                const displayName = user.nickname || user.username || '当前用户';
+                userInfoEl.className = 'alert alert-secondary mb-3';
+                userInfoEl.innerHTML = `<i class="fas fa-user me-2"></i>当前用户：<strong>${displayName}</strong>（ID: ${user.id}）`;
+
+                if (membership && membership.active) {
+                    const remain = membership.remainingQuota != null ? membership.remainingQuota : 0;
+                    const pointsText = balance != null ? balance : '--';
+                    membershipInfoEl.className = 'alert alert-success mb-3';
+                    membershipInfoEl.innerHTML = `<i class="fas fa-crown me-2"></i>当前已开通 <strong>${membership.typeDesc || membership.type || '会员'}</strong>，剩余配额 ${remain}，点数余额 ${pointsText}`;
+                } else {
+                    const pointsText = balance != null ? balance : '--';
+                    membershipInfoEl.className = 'alert alert-light mb-3';
+                    membershipInfoEl.innerHTML = `<i class="fas fa-circle-info me-2"></i>当前未开通会员，点数余额 ${pointsText}。可直接选择套餐创建订单。`;
+                }
+            }
+
+            async function refreshUserState() {
+                const user = getAuthUser();
+                if (!user || user.id == null) {
+                    renderUserState(null, null, null);
+                    return;
+                }
+                const [membership, balance] = await Promise.all([
+                    loadCurrentMembership(),
+                    loadPointsBalance()
+                ]);
+                renderUserState(user, membership, balance);
+            }
+
+            async function subscribe(type) {
+                const user = getAuthUser();
+                const userId = user && user.id != null ? Number(user.id) : null;
+                const statusEl = document.getElementById('subscribeStatus');
+                statusEl.className = 'alert alert-info';
+                statusEl.textContent = '正在创建会员订单...';
+                statusEl.classList.remove('d-none');
+
+                if (!userId) {
+                    statusEl.className = 'alert alert-warning';
+                    statusEl.textContent = '请先登录后再开通会员。';
+                    openLoginModal();
+                    return;
+                }
+
+                try {
+                    const resp = await authFetch('/api/membership/order', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify({ userId: userId, type: type }),
+                        authPromptOn401: true
+                    });
+                    const result = unwrapApiPayload(await resp.json());
+                    if (resp.ok && result && result.orderNo) {
+                        statusEl.className = 'alert alert-success';
+                        statusEl.textContent = '订单创建成功，正在跳转到支付页面...';
+                        const qs = new URLSearchParams({ orderNo: String(result.orderNo) });
+                        setTimeout(() => window.location.assign(`/membership/pay?${qs.toString()}`), 400);
+                        return;
+                    }
+                    statusEl.className = 'alert alert-danger';
+                    statusEl.textContent = '订单创建失败，请稍后重试。';
+                } catch (e) {
+                    statusEl.className = 'alert alert-danger';
+                    statusEl.textContent = '网络或系统异常：' + e.message;
+                }
+            }
+
+            document.addEventListener('DOMContentLoaded', () => {
+                loadPlans();
+                const boot = window.ensureAuthHydrated ? window.ensureAuthHydrated() : Promise.resolve();
+                Promise.resolve(boot).finally(() => refreshUserState());
+                document.getElementById('subscribeMonthlyBtn').addEventListener('click', () => subscribe('MONTHLY'));
+                document.getElementById('subscribeQuarterlyBtn').addEventListener('click', () => subscribe('QUARTERLY'));
+                document.getElementById('subscribeYearlyBtn').addEventListener('click', () => subscribe('YEARLY'));
+                window.addEventListener('auth-state-changed', refreshUserState);
+            });
+        })();
+    </script>
+</th:block>
 </body>
 </html>

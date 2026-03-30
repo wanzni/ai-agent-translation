@@ -2,26 +2,24 @@
 <html lang="zh-CN" xmlns:th="http://www.thymeleaf.org"
       th:replace="~{layout/base :: layout(~{::title}, ~{::content}, ~{::page-styles}, ~{::page-scripts})}">
 <head>
-    <title>个人资料 - 智能翻译助手</title>
-    
-    <!-- 页面特定样式 -->
+    <title>个人资料</title>
     <th:block th:fragment="page-styles">
         <style>
             .profile-container {
-                max-width: 800px;
+                max-width: 900px;
                 margin: 0 auto;
             }
 
             .profile-card {
                 background: white;
                 border-radius: 0.75rem;
-                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.08);
                 overflow: hidden;
                 margin-bottom: 1.5rem;
             }
 
             .profile-header {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
                 color: white;
                 padding: 1.5rem;
             }
@@ -60,13 +58,10 @@
 
             .profile-value {
                 margin-bottom: 1rem;
-                padding: 0.5rem;
+                padding: 0.75rem;
                 background: #f1f5f9;
                 border-radius: 0.375rem;
-            }
-
-            .edit-form {
-                display: none;
+                min-height: 48px;
             }
 
             .stats-grid {
@@ -96,255 +91,240 @@
         </style>
     </th:block>
 </head>
-
 <body>
-    <div th:fragment="content">
-        <div class="profile-container">
-            <!-- 页面标题 -->
-            <div class="d-flex justify-content-between align-items-center mb-4">
-                <h1 class="h3 mb-0">个人资料</h1>
-                <button class="btn btn-primary" id="editProfileBtn">
-                    <i class="fas fa-edit me-1"></i>编辑资料
-                </button>
+<div th:fragment="content">
+    <div class="profile-container">
+        <div id="profileAlert" class="alert alert-info d-none"></div>
+
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="h3 mb-0">个人资料</h1>
+            <div class="d-flex gap-2">
+                <a class="btn btn-outline-secondary" href="/">返回工作台</a>
+                <a class="btn btn-outline-primary" href="/orders">我的订单</a>
+            </div>
+        </div>
+
+        <div class="profile-card">
+            <div class="profile-header">
+                <h2 class="h4 mb-0">基本信息</h2>
             </div>
 
-            <!-- 个人资料卡片 -->
-            <div class="profile-card">
-                <div class="profile-header">
-                    <h2 class="h4 mb-0">基本信息</h2>
-                </div>
-                
-                <!-- 头像区域 -->
-                <div class="avatar-section">
-                    <img src="https://ui-avatars.com/api/?name=AI+User&size=120&background=2563eb&color=ffffff" 
-                         alt="用户头像" class="avatar">
-                    <h3>AI翻译助手用户</h3>
-                    <p class="text-muted mb-0">高级用户</p>
-                </div>
+            <div class="avatar-section">
+                <img id="profileAvatar" src="/img/avatar.png" alt="用户头像" class="avatar">
+                <h3 id="profileDisplayName">当前用户</h3>
+                <p class="text-muted mb-0" id="profileRoleText">普通用户</p>
+            </div>
 
-                <!-- 资料展示区域 -->
-                <div class="profile-section">
-                    <div class="row">
-                        <div class="col-md-6">
-                            <div class="profile-label">用户名</div>
-                            <div class="profile-value" id="usernameDisplay">ai_user</div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="profile-label">邮箱</div>
-                            <div class="profile-value" id="emailDisplay">ai.user@example.com</div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="profile-label">姓名</div>
-                            <div class="profile-value" id="nameDisplay">AI翻译助手用户</div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="profile-label">手机号</div>
-                            <div class="profile-value" id="phoneDisplay">+86 138****8888</div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="profile-label">注册时间</div>
-                            <div class="profile-value" id="registerDateDisplay">2024-01-01</div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="profile-label">最后登录</div>
-                            <div class="profile-value" id="lastLoginDisplay">2024-01-15 14:30</div>
-                        </div>
+            <div class="profile-section">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="profile-label">用户名</div>
+                        <div class="profile-value" id="usernameDisplay">-</div>
                     </div>
-                </div>
-
-                <!-- 编辑表单区域 -->
-                <div class="profile-section edit-form" id="editForm">
-                    <form id="profileForm">
-                        <div class="row g-3">
-                            <div class="col-md-6">
-                                <label class="form-label">用户名</label>
-                                <input type="text" class="form-control" id="usernameInput" value="ai_user">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">邮箱</label>
-                                <input type="email" class="form-control" id="emailInput" value="ai.user@example.com">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">姓名</label>
-                                <input type="text" class="form-control" id="nameInput" value="AI翻译助手用户">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">手机号</label>
-                                <input type="tel" class="form-control" id="phoneInput" value="+86 138****8888">
-                            </div>
-                            <div class="col-12">
-                                <label class="form-label">个人简介</label>
-                                <textarea class="form-control" rows="3" placeholder="请输入个人简介">AI翻译助手高级用户，专注于多语言翻译技术研究。</textarea>
-                            </div>
-                        </div>
-                        <div class="mt-3 d-flex justify-content-end gap-2">
-                            <button type="button" class="btn btn-secondary" id="cancelEditBtn">取消</button>
-                            <button type="submit" class="btn btn-primary">
-                                <i class="fas fa-save me-1"></i>保存
-                            </button>
-                        </div>
-                    </form>
-                </div>
-
-                <!-- 统计信息 -->
-                <div class="profile-section">
-                    <h4 class="mb-3">使用统计</h4>
-                    <div class="stats-grid">
-                        <div class="stat-card">
-                            <div class="stat-number">1,234</div>
-                            <div class="stat-label">翻译次数</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-number">567</div>
-                            <div class="stat-label">文档翻译</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-number">89</div>
-                            <div class="stat-label">术语条目</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-number">12</div>
-                            <div class="stat-label">聊天会话</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-number" id="profilePointsBalance">--</div>
-                            <div class="stat-label">剩余点数</div>
-                        </div>
+                    <div class="col-md-6">
+                        <div class="profile-label">邮箱</div>
+                        <div class="profile-value" id="emailDisplay">-</div>
                     </div>
-                    <small class="text-muted d-block mt-2">
-                    文本翻译每次消耗1点数，文档翻译每次消耗10点数。
-                    </small>
+                    <div class="col-md-6">
+                        <div class="profile-label">昵称</div>
+                        <div class="profile-value" id="nameDisplay">-</div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="profile-label">手机号</div>
+                        <div class="profile-value" id="phoneDisplay">-</div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="profile-label">注册时间</div>
+                        <div class="profile-value" id="registerDateDisplay">-</div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="profile-label">最近登录</div>
+                        <div class="profile-value" id="lastLoginDisplay">-</div>
+                    </div>
                 </div>
             </div>
 
-            <!-- 安全设置 -->
-            <div class="profile-card">
-                <div class="profile-header">
-                    <h2 class="h4 mb-0">安全设置</h2>
-                </div>
-                <div class="profile-section">
-                    <div class="d-flex justify-content-between align-items-center mb-3">
-                        <div>
-                            <h5 class="mb-1">修改密码</h5>
-                            <p class="text-muted mb-0">定期更改密码以保护账户安全</p>
-                        </div>
-                        <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#changePasswordModal">
-                            <i class="fas fa-key me-1"></i>修改密码
-                        </button>
+            <div class="profile-section">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h4 class="mb-1">资料编辑说明</h4>
+                        <p class="text-muted mb-0">当前仓库已接入资料读取能力，但资料修改接口暂未开放。</p>
                     </div>
-                    
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <h5 class="mb-1">两步验证</h5>
-                            <p class="text-muted mb-0">为账户添加额外的安全保护</p>
-                        </div>
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="twoFactorAuth">
-                            <label class="form-check-label" for="twoFactorAuth">启用</label>
-                        </div>
+                    <button class="btn btn-outline-primary" id="editProfileBtn">编辑资料</button>
+                </div>
+            </div>
+
+            <div class="profile-section">
+                <h4 class="mb-3">账户状态</h4>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-number" id="profileMembershipType">--</div>
+                        <div class="stat-label">会员状态</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="profileRemainingQuota">--</div>
+                        <div class="stat-label">剩余配额</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="profilePointsBalance">--</div>
+                        <div class="stat-label">点数余额</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="profileMembershipExpire">--</div>
+                        <div class="stat-label">会员到期</div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- 修改密码模态框 -->
-        <div class="modal fade" id="changePasswordModal" tabindex="-1">
-            <div class="modal-dialog">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title">修改密码</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <div class="profile-card">
+            <div class="profile-header">
+                <h2 class="h4 mb-0">安全设置</h2>
+            </div>
+            <div class="profile-section">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div>
+                        <h5 class="mb-1">修改密码</h5>
+                        <p class="text-muted mb-0">当前页面已接入登录态与资料读取，密码修改接口尚未接入。</p>
                     </div>
-                    <div class="modal-body">
-                        <form>
-                            <div class="mb-3">
-                                <label class="form-label">当前密码</label>
-                                <input type="password" class="form-control" placeholder="请输入当前密码">
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">新密码</label>
-                                <input type="password" class="form-control" placeholder="请输入新密码">
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">确认新密码</label>
-                                <input type="password" class="form-control" placeholder="请再次输入新密码">
-                            </div>
-                        </form>
+                    <button class="btn btn-outline-primary" id="changePasswordBtn">修改密码</button>
+                </div>
+
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="mb-1">两步验证</h5>
+                        <p class="text-muted mb-0">当前仓库暂未提供两步验证后端能力。</p>
                     </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                        <button type="button" class="btn btn-primary">保存</button>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="twoFactorAuth" disabled>
+                        <label class="form-check-label" for="twoFactorAuth">未接入</label>
                     </div>
                 </div>
             </div>
         </div>
     </div>
+</div>
 
-    <!-- 页面特定脚本 -->
-    <th:block th:fragment="page-scripts">
-        <script>
-            $(document).ready(function() {
-                // 编辑资料功能
-                $('#editProfileBtn').on('click', function() {
-                    $('.profile-value').hide();
-                    $('.edit-form').show();
-                    $(this).hide();
-                });
+<th:block th:fragment="page-scripts">
+    <script>
+        (function () {
+            function authFetch(url, options) {
+                return window.authorizedFetch ? window.authorizedFetch(url, options) : fetch(url, options);
+            }
 
-                $('#cancelEditBtn').on('click', function() {
-                    $('.edit-form').hide();
-                    $('.profile-value').show();
-                    $('#editProfileBtn').show();
-                });
-
-                $('#profileForm').on('submit', function(e) {
-                    e.preventDefault();
-                    Utils.showToast('资料已更新', 'success');
-                    $('.edit-form').hide();
-                    $('.profile-value').show();
-                    $('#editProfileBtn').show();
-                });
-
-                // 两步验证开关
-                $('#twoFactorAuth').on('change', function() {
-                    if ($(this).is(':checked')) {
-                        Utils.showToast('两步验证已启用', 'success');
-                    } else {
-                        Utils.showToast('两步验证已禁用', 'info');
-                    }
-                });
-
-                // 加载点数余额
-                try {
-                    const authUser = JSON.parse(localStorage.getItem('authUser') || 'null');
-                    const balanceEl = document.getElementById('profilePointsBalance');
-                    if (!balanceEl) return;
-                    if (!authUser || !authUser.id) {
-                        balanceEl.textContent = '--';
-                        return;
-                    }
-                    authorizedFetch('/api/points/balance?userId=' + encodeURIComponent(String(authUser.id)))
-                        .then(res => res.json())
-                        .then(data => {
-                            // 兼容统一ApiResponse封装
-                            let payload = data;
-                            try {
-                                while (payload && typeof payload === 'object' && payload.data && typeof payload.data === 'object' && !Array.isArray(payload.data)) {
-                                    payload = payload.data;
-                                }
-                            } catch (_) {}
-                            const bal = (payload && (payload.balance !== undefined ? payload.balance : undefined));
-                            balanceEl.textContent = (bal !== undefined && bal !== null) ? String(bal) : '--';
-                        })
-                        .catch(err => {
-                            console.warn('加载点数失败:', err);
-                            balanceEl.textContent = '--';
-                        });
-                } catch (e) {
-                    console.warn('点数展示异常:', e);
+            function unwrapApiPayload(payload) {
+                if (payload && typeof payload === 'object' && Object.prototype.hasOwnProperty.call(payload, 'data')) {
+                    return payload.data;
                 }
+                return payload;
+            }
+
+            function formatDateTime(value) {
+                if (!value) return '-';
+                const date = typeof value === 'string' ? new Date(value.replace('T', ' ')) : new Date(value);
+                if (Number.isNaN(date.getTime())) return '-';
+                const pad = num => String(num).padStart(2, '0');
+                return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+            }
+
+            function showAlert(message, type) {
+                const alertEl = document.getElementById('profileAlert');
+                alertEl.className = `alert alert-${type}`;
+                alertEl.textContent = message;
+                alertEl.classList.remove('d-none');
+            }
+
+            function fill(id, value) {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.textContent = value == null || value === '' ? '-' : value;
+                }
+            }
+
+            async function loadCurrentUser() {
+                const resp = await authFetch('/api/users/me', { authPromptOn401: true });
+                if (!resp.ok) {
+                    throw new Error('load current user failed');
+                }
+                return unwrapApiPayload(await resp.json());
+            }
+
+            async function loadMembership() {
+                const resp = await authFetch('/api/membership/current', { authPromptOn401: false });
+                if (!resp.ok) return null;
+                return unwrapApiPayload(await resp.json());
+            }
+
+            async function loadPointsBalance() {
+                const resp = await authFetch('/api/points/balance', { authPromptOn401: false });
+                if (!resp.ok) return null;
+                const payload = unwrapApiPayload(await resp.json());
+                return payload && payload.balance != null ? payload.balance : null;
+            }
+
+            async function renderProfile() {
+                try {
+                    const [user, membership, balance] = await Promise.all([
+                        loadCurrentUser(),
+                        loadMembership(),
+                        loadPointsBalance()
+                    ]);
+
+                    const displayName = user.nickname || user.username || '当前用户';
+                    const roleText = user.role || 'USER';
+                    fill('usernameDisplay', user.username);
+                    fill('emailDisplay', user.email);
+                    fill('nameDisplay', user.nickname || user.username);
+                    fill('phoneDisplay', user.phone);
+                    fill('registerDateDisplay', formatDateTime(user.createdAt));
+                    fill('lastLoginDisplay', formatDateTime(user.lastLoginTime));
+                    fill('profileDisplayName', displayName);
+                    fill('profileRoleText', roleText);
+
+                    const avatarEl = document.getElementById('profileAvatar');
+                    const avatarUrl = user.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&size=120&background=2563eb&color=ffffff`;
+                    avatarEl.src = avatarUrl;
+                    avatarEl.onerror = () => {
+                        avatarEl.onerror = null;
+                        avatarEl.src = '/img/avatar.png';
+                    };
+
+                    if (membership && membership.active) {
+                        fill('profileMembershipType', membership.typeDesc || membership.type || '会员');
+                        fill('profileRemainingQuota', membership.remainingQuota);
+                        fill('profileMembershipExpire', formatDateTime(membership.endAt));
+                    } else {
+                        fill('profileMembershipType', '未开通');
+                        fill('profileRemainingQuota', 0);
+                        fill('profileMembershipExpire', '-');
+                    }
+                    fill('profilePointsBalance', balance != null ? balance : '--');
+                } catch (e) {
+                    showAlert('加载个人资料失败，请先确认登录状态。', 'warning');
+                }
+            }
+
+            function showUnavailableMessage(message) {
+                if (typeof Utils !== 'undefined' && Utils.showToast) {
+                    Utils.showToast(message, 'info');
+                } else {
+                    alert(message);
+                }
+            }
+
+            document.addEventListener('DOMContentLoaded', () => {
+                const boot = window.ensureAuthHydrated ? window.ensureAuthHydrated() : Promise.resolve();
+                Promise.resolve(boot).finally(() => renderProfile());
+                document.getElementById('editProfileBtn').addEventListener('click', () => {
+                    showUnavailableMessage('当前仓库暂未提供资料修改接口，已先接入真实资料读取。');
+                });
+                document.getElementById('changePasswordBtn').addEventListener('click', () => {
+                    showUnavailableMessage('当前仓库暂未提供密码修改接口。');
+                });
+                window.addEventListener('auth-state-changed', renderProfile);
             });
-        </script>
-    </th:block>
+        })();
+    </script>
+</th:block>
 </body>
 </html>

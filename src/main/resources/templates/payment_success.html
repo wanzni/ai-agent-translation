@@ -12,9 +12,13 @@
                 padding: 24px;
             }
             .success-icon {
-                width: 64px; height: 64px; border-radius: 50%;
+                width: 64px;
+                height: 64px;
+                border-radius: 50%;
                 background: rgba(255,255,255,0.2);
-                display: flex; align-items: center; justify-content: center;
+                display: flex;
+                align-items: center;
+                justify-content: center;
             }
         </style>
     </th:block>
@@ -29,12 +33,14 @@
                 </div>
                 <div>
                     <h3 class="mb-1">支付成功</h3>
-                    <div id="descLine" class="opacity-75">会员开通已完成，权益立即生效。</div>
+                    <div id="descLine" class="opacity-75">会员已开通，权益即时生效。</div>
                 </div>
             </div>
         </div>
 
-        <div class="row">
+        <div id="successAlert" class="alert alert-info d-none"></div>
+
+        <div class="row g-3">
             <div class="col-lg-8">
                 <div class="card shadow-sm mb-3">
                     <div class="card-header">
@@ -43,7 +49,7 @@
                     <div class="card-body">
                         <div class="row mb-2">
                             <div class="col-6">订单号：<span id="orderId">-</span></div>
-                            <div class="col-6">用户ID：<span id="userId">-</span></div>
+                            <div class="col-6">用户 ID：<span id="userId">-</span></div>
                         </div>
                         <div class="row mb-2">
                             <div class="col-6">会员类型：<span id="type">-</span></div>
@@ -66,10 +72,9 @@
                     </div>
                     <div class="card-body">
                         <ul class="mb-0">
-                            <li>每月 5000 点文档/文本翻译额度</li>
-                            <li>优先队列与更快的处理速度</li>
-                            <li>高级引擎（如 Qwen、DeepL 等）使用权限</li>
-                            <li>专属客服与问题优先处理</li>
+                            <li>文档翻译、文本翻译和客服场景可直接使用会员能力。</li>
+                            <li>会员状态、剩余配额和点数余额会同步回工作台与个人资料页。</li>
+                            <li>后续如需查看订单状态，可前往“我的订单”页面查看。</li>
                         </ul>
                     </div>
                 </div>
@@ -79,12 +84,9 @@
                 <div class="card shadow-sm">
                     <div class="card-body">
                         <div class="d-grid gap-2">
-                            <a class="btn btn-primary" href="/document" th:href="@{/document}">
-                                <i class="fas fa-file-alt me-2"></i>前往文档翻译
-                            </a>
-                            <a class="btn btn-outline-secondary" href="/membership" th:href="@{/membership}">
-                                <i class="fas fa-crown me-2"></i>返回会员中心
-                            </a>
+                            <a class="btn btn-primary" href="/">返回工作台</a>
+                            <a class="btn btn-outline-secondary" href="/membership">返回会员中心</a>
+                            <a class="btn btn-outline-primary" href="/orders">查看订单</a>
                         </div>
                     </div>
                 </div>
@@ -95,56 +97,105 @@
 
 <th:block th:fragment="page-scripts">
     <script>
-        (function(){
+        (function () {
             const params = new URLSearchParams(window.location.search);
-            const get = (k, d='-') => {
-                const v = params.get(k); return (v && v.trim()) ? v : d;
-            };
-            const fill = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-            const pad = (n) => String(n).padStart(2, '0');
-            const formatDate = (val) => {
-                try {
-                    if (!val) return '-';
-                    if (val instanceof Date) {
-                        const d = val;
-                        return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-                    }
-                    if (typeof val === 'string') {
-                        // 优先尝试解析为Date
-                        const d = new Date(val);
-                        if (!isNaN(d.getTime())) {
-                            return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-                        }
-                        // 回退：处理形如 2025-11-19T18:03:41.34569
-                        if (val.includes('T')) {
-                            return val.replace('T',' ').split('.')[0];
-                        }
-                        return val;
-                    }
-                    return String(val);
-                } catch (_) { return String(val || '-'); }
-            };
 
-            const orderIdParam = get('orderId','');
-            const orderNoParam = get('orderNo','');
-            fill('orderId', orderIdParam || orderNoParam || '-');
-            fill('userId', get('userId'));
-            const type = get('type');
-            const typeKey = (type || '').toUpperCase();
-            const typeMap = { MONTHLY: '包月会员', QUARTERLY: '包季会员', YEARLY: '包年会员' };
-            const typeName = typeMap[typeKey] || type || '-';
-            fill('type', typeName);
-            fill('quota', get('periodQuota'));
-            fill('startAt', formatDate(get('startAt','')));
-            fill('endAt', formatDate(get('endAt','')));
-            fill('amount', get('amount'));
-            const paidParam = get('paidAt','');
-            fill('paidAt', paidParam ? formatDate(paidParam) : formatDate(new Date()));
-
-            const descLine = document.getElementById('descLine');
-            if (descLine) {
-                descLine.textContent = `恭喜你开通 ${typeName}，现在即可使用会员权益。`;
+            function authFetch(url, options) {
+                return window.authorizedFetch ? window.authorizedFetch(url, options) : fetch(url, options);
             }
+
+            function unwrapApiPayload(payload) {
+                if (payload && typeof payload === 'object' && Object.prototype.hasOwnProperty.call(payload, 'data')) {
+                    return payload.data;
+                }
+                return payload;
+            }
+
+            function pad(num) {
+                return String(num).padStart(2, '0');
+            }
+
+            function formatDateTime(value) {
+                if (!value) return '-';
+                const date = typeof value === 'string' ? new Date(value.replace('T', ' ')) : new Date(value);
+                if (Number.isNaN(date.getTime())) return '-';
+                return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+            }
+
+            function fill(id, value) {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.textContent = value == null || value === '' ? '-' : value;
+                }
+            }
+
+            function typeToZh(type) {
+                switch (String(type || '').toUpperCase()) {
+                    case 'MONTHLY': return '包月会员';
+                    case 'QUARTERLY': return '包季会员';
+                    case 'YEARLY': return '包年会员';
+                    default: return type || '-';
+                }
+            }
+
+            function showAlert(message, type) {
+                const alertEl = document.getElementById('successAlert');
+                alertEl.className = `alert alert-${type}`;
+                alertEl.textContent = message;
+                alertEl.classList.remove('d-none');
+            }
+
+            function render(payload) {
+                const typeName = typeToZh(payload.type);
+                fill('orderId', payload.orderNo);
+                fill('userId', payload.userId);
+                fill('type', typeName);
+                fill('quota', payload.periodQuota);
+                fill('startAt', formatDateTime(payload.startAt));
+                fill('endAt', formatDateTime(payload.endAt));
+                fill('amount', payload.amount);
+                fill('paidAt', formatDateTime(payload.paidAt));
+                document.getElementById('descLine').textContent = `恭喜你已开通${typeName}，现在即可使用会员权益。`;
+            }
+
+            async function hydrateFromOrder(orderNo) {
+                const resp = await authFetch(`/api/membership/order/${encodeURIComponent(orderNo)}`, { authPromptOn401: false });
+                if (!resp.ok) {
+                    throw new Error('load order failed');
+                }
+                return unwrapApiPayload(await resp.json());
+            }
+
+            async function init() {
+                const payload = {
+                    orderNo: params.get('orderNo') || '',
+                    userId: params.get('userId') || '',
+                    type: params.get('type') || '',
+                    periodQuota: params.get('periodQuota') || '',
+                    startAt: params.get('startAt') || '',
+                    endAt: params.get('endAt') || '',
+                    amount: params.get('amount') || '',
+                    paidAt: params.get('paidAt') || ''
+                };
+
+                if (payload.orderNo && (!payload.type || !payload.periodQuota || !payload.paidAt)) {
+                    try {
+                        const order = await hydrateFromOrder(payload.orderNo);
+                        render(order);
+                        return;
+                    } catch (e) {
+                        showAlert('支付成功，但订单信息读取失败，可前往订单页查看详情。', 'warning');
+                    }
+                }
+
+                if (payload.orderNo) {
+                    render(payload);
+                } else {
+                    showAlert('缺少订单信息，可前往订单页查看支付结果。', 'warning');
+                }
+            }
+
+            document.addEventListener('DOMContentLoaded', init);
         })();
     </script>
 </th:block>

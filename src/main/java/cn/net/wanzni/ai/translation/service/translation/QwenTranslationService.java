@@ -313,6 +313,39 @@ public class QwenTranslationService implements ThirdPartyTranslator {
         }
     }
 
+    public String complete(String systemPrompt, String userPrompt) {
+        if (!StringUtils.hasText(properties.getApiKey())) {
+            throw new IllegalStateException("DashScope API Key is not configured");
+        }
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("model", properties.resolveModel());
+        body.put("messages", List.of(
+                Map.of("role", "system", "content", systemPrompt),
+                Map.of("role", "user", "content", userPrompt)
+        ));
+        if (properties.getTemperature() != null) {
+            body.put("temperature", properties.getTemperature());
+        }
+
+        Map<String, Object> resp = webClient.post()
+                .uri(properties.getBaseUrl())
+                .contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.APPLICATION_JSON)
+                .header("Authorization", "Bearer " + properties.getApiKey())
+                .bodyValue(body)
+                .retrieve()
+                .onStatus(HttpStatusCode::is4xxClientError, (ClientResponse r) ->
+                        r.bodyToMono(String.class).flatMap(errBody ->
+                                Mono.error(new RuntimeException("DashScope 4xx: " + r.statusCode() + " - " + errBody))))
+                .onStatus(HttpStatusCode::is5xxServerError, (ClientResponse r) ->
+                        r.bodyToMono(String.class).flatMap(errBody ->
+                                Mono.error(new RuntimeException("DashScope 5xx: " + r.statusCode() + " - " + errBody))))
+                .bodyToMono(Map.class)
+                .block();
+        return extractTranslatedText(resp);
+    }
+
     @Override
     public String getEngineCode() {
         return "QWEN";

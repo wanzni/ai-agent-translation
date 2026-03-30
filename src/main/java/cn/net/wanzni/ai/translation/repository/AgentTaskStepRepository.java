@@ -10,4 +10,6 @@ import java.util.List;
 public interface AgentTaskStepRepository extends JpaRepository<AgentTaskStep, Long> {
 
     List<AgentTaskStep> findByTaskIdOrderByStepNoAsc(Long taskId);
+
+    long countByTaskId(Long taskId);
 }

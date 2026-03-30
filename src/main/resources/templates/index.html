@@ -34,16 +34,62 @@
             <button class="w-full text-left rounded-2xl px-4 py-3" :class="tab('term')" @click="setPanel('term')">术语库</button>
             <button class="w-full text-left rounded-2xl px-4 py-3" :class="tab('quality')" @click="setPanel('quality')">质量评估</button>
         </div>
-        <div class="mt-auto rounded-3xl bg-white/5 border border-white/10 p-4 text-sm">
+        <div class="d-none mt-auto rounded-3xl bg-white/5 border border-white/10 p-4 text-sm">
             <p class="text-slate-300">当前用户</p>
             <p class="mt-2 font-medium" th:text="${userName}">当前用户</p>
+        </div>
+        <div class="mt-auto rounded-3xl bg-white/5 border border-white/10 p-4 text-sm">
+            <p class="text-slate-300">账号与会员</p>
+            <template x-if="loggedIn()">
+                <div class="mt-3 space-y-3">
+                    <div>
+                        <p class="font-medium text-white" x-text="userName()"></p>
+                        <p class="text-xs text-slate-400" x-text="userMeta()"></p>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 text-xs">
+                        <div class="rounded-2xl bg-white/5 px-3 py-2">
+                            <p class="text-slate-400">会员状态</p>
+                            <p class="mt-1 text-white" x-text="membershipBadgeText()"></p>
+                        </div>
+                        <div class="rounded-2xl bg-white/5 px-3 py-2">
+                            <p class="text-slate-400">剩余点数</p>
+                            <p class="mt-1 text-white" x-text="pointsText()"></p>
+                        </div>
+                    </div>
+                    <p class="text-xs text-slate-400" x-text="membershipDetailText()"></p>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button class="rounded-2xl bg-blue-500 px-3 py-2 text-xs font-medium text-white" @click="openMembership()">开通会员</button>
+                        <button class="rounded-2xl border border-white/10 px-3 py-2 text-xs text-slate-100" @click="openOrders()">我的订单</button>
+                        <button class="rounded-2xl border border-white/10 px-3 py-2 text-xs text-slate-100" @click="openProfile()">个人资料</button>
+                        <button class="rounded-2xl border border-white/10 px-3 py-2 text-xs text-slate-100" @click="logout()">退出登录</button>
+                    </div>
+                </div>
+            </template>
+            <template x-if="!loggedIn()">
+                <div class="mt-3 space-y-3">
+                    <p class="text-xs leading-6 text-slate-400">登录后可使用会员购买、订单查询和个人资料相关能力。</p>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button class="rounded-2xl bg-blue-500 px-3 py-2 text-xs font-medium text-white" @click="openLogin()">立即登录</button>
+                        <button class="rounded-2xl border border-white/10 px-3 py-2 text-xs text-slate-100" @click="openMembership()">会员中心</button>
+                    </div>
+                </div>
+            </template>
         </div>
     </aside>
 
     <main class="flex-1 px-6 py-6 overflow-hidden flex flex-col gap-6">
         <header class="card rounded-[28px] px-6 py-5">
-            <div>
-                <h1 class="text-2xl font-semibold text-slate-900" x-text="title()"></h1>
+            <div class="flex items-center justify-between gap-4">
+                <div>
+                    <h1 class="text-2xl font-semibold text-slate-900" x-text="title()"></h1>
+                    <p class="mt-1 text-sm text-slate-500" x-text="headerSubtitle()"></p>
+                </div>
+                <div class="flex flex-wrap justify-end gap-3 text-sm">
+                    <button class="rounded-xl border border-slate-200 px-3 py-2" x-show="!loggedIn()" @click="openLogin()">登录</button>
+                    <button class="rounded-xl border border-slate-200 px-3 py-2" x-show="loggedIn()" @click="openProfile()">个人资料</button>
+                    <button class="rounded-xl border border-slate-200 px-3 py-2" x-show="loggedIn()" @click="openOrders()">我的订单</button>
+                    <button class="rounded-xl bg-blue-600 px-4 py-2 text-white" @click="openMembership()">开通会员</button>
+                </div>
             </div>
         </header>
 
@@ -75,6 +121,9 @@
                                 <span x-text="getStatusLabel(textResult.status)"></span>
                                 <button @click="copyText()" class="text-xs">复制</button>
                             </div>
+                            <template x-if="textResult.revisionApplied">
+                                <div class="mt-3 inline-flex w-fit items-center rounded-full bg-emerald-50 px-3 py-1 text-xs text-emerald-700" x-text="textResult.revisionSummary || '已自动修正规则问题'"></div>
+                            </template>
                             <div class="mt-4 flex-1 whitespace-pre-wrap text-sm leading-7 text-slate-700" x-text="textResult.previewText || textResult.finalText || '翻译结果将在此处显示'"></div>
                             <div class="mt-4 grid grid-cols-2 gap-3 text-xs">
                                 <div class="rounded-2xl bg-white border border-slate-200 px-3 py-2">模型：<span x-text="textResult.selectedModel || '--'"></span></div>
@@ -278,17 +327,18 @@
     <script th:inline="none">
         function app(){return {
             active:'text', engines:[], docs:[], sessions:[], messages:[], terms:[], termStats:{}, qualityResult:null, qualityStatus:'idle',
+            currentUser:null, membershipInfo:null, pointsBalance:null,
             textTimeline:[], textLoading:false, chatStreaming:false, textEventSource:null, chatEventSource:null, docTimer:null, typeTimer:null, previewSource:'',
             chatTypewriterTimer:null, chatTypewriterQueue:[], chatStreamingBotId:null, chatFinalDonePending:null,
             activeSession:null,
             categories:['GENERAL','TECHNOLOGY','BUSINESS','MEDICAL','LEGAL','FINANCE','EDUCATION','SCIENCE'],
             categoryLabels:{GENERAL:'通用',TECHNOLOGY:'技术',BUSINESS:'商业',MEDICAL:'医疗',LEGAL:'法律',FINANCE:'金融',EDUCATION:'教育',SCIENCE:'科学'},
-            stepTypeMap:{CREATED:'已创建',PLAN:'任务规划',RETRIEVE_TERMINOLOGY:'检索术语',TRANSLATE:'执行翻译',QUALITY_CHECK:'质量检查',FINALIZE:'结果整理'},
+            stepTypeMap:{CREATED:'已创建',PLAN:'任务规划',RETRIEVE_TERMINOLOGY:'检索术语',TRANSLATE:'执行翻译',QUALITY_CHECK:'质量检查',REVISE:'自动修正',FINALIZE:'结果整理'},
             statusMap:{IDLE:'等待中',CREATED:'等待中',PENDING:'等待中',RUNNING:'进行中',PROCESSING:'进行中',SUCCESS:'成功',COMPLETED:'成功',FAILED:'失败，请重试',ERROR:'失败，请重试',PAUSED:'已暂停',CANCELLED:'已取消'},
             languages:[{value:'auto',label:'自动检测'},{value:'zh',label:'中文'},{value:'en',label:'英语'},{value:'ja',label:'日语'},{value:'ko',label:'韩语'},{value:'fr',label:'法语'},{value:'de',label:'德语'}],
             targetLanguages:[{value:'zh',label:'中文'},{value:'en',label:'英语'},{value:'ja',label:'日语'},{value:'ko',label:'韩语'},{value:'fr',label:'法语'},{value:'de',label:'德语'}],
             textForm:{sourceText:'',sourceLanguage:'auto',targetLanguage:'en',translationEngine:'',domain:'general'},
-            textResult:{taskId:null,status:'IDLE',currentStep:'',selectedModel:'',previewText:'',finalText:'',needHumanReview:false,qualityScore:null,reviewReasonCode:''},
+            textResult:{taskId:null,status:'IDLE',currentStep:'',selectedModel:'',previewText:'',finalText:'',needHumanReview:false,qualityScore:null,reviewReasonCode:'',revisionApplied:false,revisionSummary:''},
             docForm:{file:null,sourceLanguage:'auto',targetLanguage:'en',translationEngine:'',translationType:'STANDARD'},
             chatForm:{sessionName:'',sourceLanguage:'zh',targetLanguage:'en',message:''},
             termForm:{id:null,sourceTerm:'',targetTerm:'',sourceLanguage:'en',targetLanguage:'zh',category:'GENERAL',domain:'',definition:''},
@@ -300,23 +350,39 @@
             async req(url,opt){const r=await this.authFetch(url,opt); if(!r.ok){throw new Error(await r.text()||r.statusText)} if(r.status===204)return null; const payload=await r.json(); if(payload&&typeof payload==='object'&&Object.prototype.hasOwnProperty.call(payload,'success')&&Object.prototype.hasOwnProperty.call(payload,'data')){ if(payload.success===false){throw new Error(payload.message||payload.error||'Request failed')} return payload.data } return payload},
             toast(msg,type){if(typeof Utils!=='undefined'&&Utils.showToast){Utils.showToast(msg,type||'info')} else {console.log(type,msg)}},
             json(v,d){if(v==null)return d; if(typeof v==='object')return v; try{return JSON.parse(v)}catch(e){return d}},
-            user(){try{return JSON.parse(localStorage.getItem('authUser')||'null')}catch(e){return null}},
+            user(){if(this.currentUser)return this.currentUser; try{return JSON.parse(localStorage.getItem('authUser')||'null')}catch(e){return null}},
             userId(){const u=this.user(); const n=u&&u.id!=null?Number(u.id):null; return Number.isFinite(n)?n:null},
             userName(){const u=this.user(); return u?(u.nickname||u.username||'当前用户'):'当前用户'},
+            loggedIn(){return this.userId()!=null},
+            userMeta(){const u=this.user(); if(!u)return '未登录'; if(u.phone)return u.phone; return u.role||'普通用户'},
+            membershipBadgeText(){return this.membershipInfo&&this.membershipInfo.active?(this.membershipInfo.typeDesc||this.membershipInfo.type||'会员已开通'):'未开通会员'},
+            pointsText(){return this.pointsBalance!=null?String(this.pointsBalance):'--'},
+            membershipDetailText(){if(!this.loggedIn())return '登录后可查看会员状态与点数余额'; if(this.membershipInfo&&this.membershipInfo.active){const remain=this.membershipInfo.remainingQuota!=null?this.membershipInfo.remainingQuota:0; return `当前会员剩余配额 ${remain}`;} return '当前为普通用户，可前往会员中心开通套餐'},
+            headerSubtitle(){if(!this.loggedIn())return '登录后可同步使用会员、订单和个人资料能力'; if(this.membershipInfo&&this.membershipInfo.active)return `已开通${this.membershipInfo.typeDesc||this.membershipInfo.type||'会员'}，可继续使用翻译与会员能力`; return '当前为普通用户，可直接开通会员并查看订单记录'},
             booleanLabel(value){return value ? '是' : '否'},
             chatMessageText(message){if(!message)return ''; if(message.role!=='assistant')return message.text||''; return message.displayText || message.statusText || message.text || ''},
             shouldShowChatDots(message){return !!(message && message.role==='assistant' && (message.phase==='pending' || message.phase==='streaming'))},
             getCategoryLabel(value){return this.categoryLabels[value] || value || '--'},
             getStepTypeLabel(step){const type=(step&& (step.stepType||step.stepName)) || ''; return this.stepTypeMap[type] || type || '--'},
             getStatusLabel(status){return this.statusMap[status] || status || '--'},
-            stepSummary(step){if(!step)return '暂无信息'; const type=step.stepType||step.stepName||''; const status=String(step.status||'').toUpperCase(); if(status==='FAILED'||status==='ERROR'){return step.errorMessage || '失败，请重试'} const out=this.json(step.outputJson,null) || {}; if(type==='CREATED')return '任务已创建'; if(type==='PLAN')return '已生成执行步骤'; if(type==='RETRIEVE_TERMINOLOGY')return '已完成术语与历史检索'; if(type==='TRANSLATE')return out.translatedText ? '已生成译文预览' : '正在生成译文'; if(type==='QUALITY_CHECK')return out.needsHumanReview ? '已完成质量检查，需人工复核' : '已完成质量检查'; if(type==='FINALIZE')return status==='SUCCESS' || status==='COMPLETED' ? '任务已完成' : '结果整理中'; return '处理中'},
-            init(){this.loadEngines();this.loadDocs();this.loadSessions();this.loadTerms();this.loadTermStats();window.addEventListener('beforeunload',()=>{this.closeText();this.closeChatConnection();this.stopChatTypewriter();this.stopDocPoll()})},
+            reviseReasonLabel(reason){return {QUALITY_PASSED:'本次质量通过，未触发自动修正',ENGINE_UNSUPPORTED:'当前引擎暂不支持自动修正',SENSITIVE_CONTENT:'检测到敏感内容，跳过自动修正',POST_REVISE_PASSED:'修正后复检通过',POST_REVISE_FAILED:'修正后复检未通过，已转人工复核',REVISE_TRIGGERED:'发现硬规则问题，准备自动修正'}[reason] || ''},
+            stepSummary(step){if(!step)return '暂无信息'; const type=step.stepType||step.stepName||''; const status=String(step.status||'').toUpperCase(); if(status==='FAILED'||status==='ERROR'){return step.errorMessage || '失败，请重试'} const out=this.json(step.outputJson,null) || {}; if(type==='CREATED')return '任务已创建'; if(type==='PLAN')return '已生成执行步骤'; if(type==='RETRIEVE_TERMINOLOGY')return '已完成术语与历史检索'; if(type==='TRANSLATE')return out.translatedText ? '已生成译文预览' : '正在生成译文'; if(type==='QUALITY_CHECK'){const hint=this.reviseReasonLabel(out.reviseSkipReason); if(out.phase==='POST_REVISE'){return hint || (out.reviseDecision==='HUMAN_REVIEW' ? '复检未通过，已转人工复核' : '修正后复检已完成')} if(out.reviseDecision==='REVISE')return hint || '发现硬规则问题，准备自动修正'; if(out.needsHumanReview)return hint || '已完成质量检查，需人工复核'; return hint || '已完成质量检查'} if(type==='REVISE')return out.revisionApplied ? (out.revisionSummary || '已完成自动修正') : '自动修正未成功'; if(type==='FINALIZE')return status==='SUCCESS' || status==='COMPLETED' ? '任务已完成' : '结果整理中'; return '处理中'},
+            init(){const boot=window.ensureAuthHydrated?window.ensureAuthHydrated():Promise.resolve(this.user()); Promise.resolve(boot).finally(()=>this.syncAuthState()); window.addEventListener('auth-state-changed',e=>{this.currentUser=e&&e.detail?e.detail.user||null:null; this.syncAuthState()});window.addEventListener('storage',()=>this.syncAuthState());window.addEventListener('beforeunload',()=>{this.closeText();this.closeChatConnection();this.stopChatTypewriter();this.stopDocPoll()})},
+            async syncAuthState(){this.currentUser=this.user(); if(!this.loggedIn()){this.membershipInfo=null; this.pointsBalance=null; this.engines=[]; this.docs=[]; this.sessions=[]; this.messages=[]; this.terms=[]; this.termStats={}; this.stopDocPoll(); return} await Promise.all([this.loadMembershipInfo(),this.loadPointsBalance(),this.loadProtectedWorkspaceData()])},
+            async loadProtectedWorkspaceData(){await Promise.all([this.loadEngines(),this.loadDocs(),this.loadSessions(),this.loadTerms(),this.loadTermStats()])},
+            async loadMembershipInfo(){try{this.membershipInfo=await this.req('/api/membership/current',{authPromptOn401:false})||null}catch(e){this.membershipInfo=null}},
+            async loadPointsBalance(){try{const data=await this.req('/api/points/balance',{authPromptOn401:false}); this.pointsBalance=data&&data.balance!=null?data.balance:null}catch(e){this.pointsBalance=null}},
+            openLogin(){try{const loginEl=document.getElementById('loginModal'); if(loginEl)(bootstrap.Modal.getInstance(loginEl)||new bootstrap.Modal(loginEl)).show()}catch(e){window.location.assign('/login')}},
+            openMembership(){window.location.assign('/membership')},
+            openOrders(){if(!this.loggedIn()){this.openLogin(); return} window.location.assign('/orders')},
+            openProfile(){if(!this.loggedIn()){this.openLogin(); return} window.location.assign('/profile')},
+            logout(){if(window.handleLogout)window.handleLogout(); this.currentUser=null; this.membershipInfo=null; this.pointsBalance=null},
             setPanel(name){this.active=name},
             async loadEngines(){try{const data=await this.req('/api/translation/engines');this.engines=Array.isArray(data)?data:[]; const preferred=this.preferredEngine(this.engines); if((!this.textForm.translationEngine||!this.engines.includes(this.textForm.translationEngine))&&preferred)this.textForm.translationEngine=preferred; if((!this.docForm.translationEngine||!this.engines.includes(this.docForm.translationEngine))&&preferred)this.docForm.translationEngine=preferred}catch(e){}},
             async detectLang(){if(!this.textForm.sourceText.trim())return; try{const d=await this.req('/api/translation/detect-language',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(this.textForm.sourceText),authPromptOn401:true}); if(d.language)this.textForm.sourceLanguage=d.language; this.toast('语言识别完成','success')}catch(e){this.toast('语言识别失败: '+e.message,'danger')}},
-            resetText(){this.closeText(); this.textTimeline=[]; this.previewSource=''; this.textResult={taskId:null,status:'CREATED',currentStep:'',selectedModel:'',previewText:'',finalText:'',needHumanReview:false,qualityScore:null,reviewReasonCode:''}; if(this.typeTimer){clearInterval(this.typeTimer); this.typeTimer=null}},
+            resetText(){this.closeText(); this.textTimeline=[]; this.previewSource=''; this.textResult={taskId:null,status:'CREATED',currentStep:'',selectedModel:'',previewText:'',finalText:'',needHumanReview:false,qualityScore:null,reviewReasonCode:'',revisionApplied:false,revisionSummary:''}; if(this.typeTimer){clearInterval(this.typeTimer); this.typeTimer=null}},
             async startTextTask(){if(!this.textForm.sourceText.trim()||this.textLoading)return; this.resetText(); this.textLoading=true; try{const task=await this.req('/api/agent/tasks/text',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:this.userId(),sourceText:this.textForm.sourceText,sourceLanguage:this.textForm.sourceLanguage,targetLanguage:this.textForm.targetLanguage,domain:this.textForm.domain||null,translationEngine:this.textForm.translationEngine||null,bizType:'HOME_TEXT_WORKSPACE'}),authPromptOn401:true}); this.textResult.taskId=task.id; this.textResult.status=task.status||'CREATED'; this.textResult.currentStep=task.currentStep||''; this.textResult.selectedModel=task.selectedModel||''; this.subText(task.id)}catch(e){this.textLoading=false; this.toast('创建任务失败: '+e.message,'danger')}},
-            subText(id){this.closeText(); const es=new EventSource('/api/agent/tasks/'+id+'/events'); this.textEventSource=es; es.addEventListener('snapshot',e=>{const d=this.json(e.data,{}); this.textResult.status=d.taskStatus||this.textResult.status; this.textResult.currentStep=d.currentStep||''; this.textResult.needHumanReview=!!d.needHumanReview; this.textResult.reviewReasonCode=d.reviewReasonCode||''; this.textTimeline=Array.isArray(d.steps)?d.steps:[]; this.textTimeline.forEach(s=>this.tryPreview(s))}); es.addEventListener('task',e=>{const d=this.json(e.data,{}); this.textResult.status=d.taskStatus||this.textResult.status; this.textResult.currentStep=d.currentStep||this.textResult.currentStep; this.textResult.selectedModel=d.selectedModel||this.textResult.selectedModel; if(d.finalQualityScore!=null)this.textResult.qualityScore=d.finalQualityScore}); es.addEventListener('step',e=>{const step=this.json(e.data,{}); const i=this.textTimeline.findIndex(x=>(x.id&&step.id&&x.id===step.id)||((x.stepNo||-1)===(step.stepNo||-2)&&x.stepType===step.stepType)); if(i>=0)this.textTimeline.splice(i,1,step); else this.textTimeline.push(step); this.textTimeline.sort((a,b)=>(a.stepNo||0)-(b.stepNo||0)); this.tryPreview(step)}); es.addEventListener('result',e=>{const d=this.json(e.data,{}); this.textResult.finalText=d.finalResponse||''; this.textResult.selectedModel=d.selectedModel||this.textResult.selectedModel; this.textResult.needHumanReview=!!d.needHumanReview; this.textResult.reviewReasonCode=d.reviewReasonCode||this.textResult.reviewReasonCode; if(d.finalQualityScore!=null)this.textResult.qualityScore=d.finalQualityScore; if(d.finalResponse&&d.finalResponse!==this.previewSource)this.typewrite(d.finalResponse)}); es.addEventListener('done',e=>{const d=this.json(e.data,{}); this.textResult.status=d.terminalStatus||this.textResult.status; this.textLoading=false; this.closeText()}); es.onerror=()=>{this.textLoading=false; this.closeText()}},
+            subText(id){this.closeText(); const es=new EventSource('/api/agent/tasks/'+id+'/events'); this.textEventSource=es; es.addEventListener('snapshot',e=>{const d=this.json(e.data,{}); this.textResult.status=d.taskStatus||this.textResult.status; this.textResult.currentStep=d.currentStep||''; this.textResult.needHumanReview=!!d.needHumanReview; this.textResult.reviewReasonCode=d.reviewReasonCode||''; this.textTimeline=Array.isArray(d.steps)?d.steps:[]; this.textTimeline.forEach(s=>this.tryPreview(s))}); es.addEventListener('task',e=>{const d=this.json(e.data,{}); this.textResult.status=d.taskStatus||this.textResult.status; this.textResult.currentStep=d.currentStep||this.textResult.currentStep; this.textResult.selectedModel=d.selectedModel||this.textResult.selectedModel; if(d.finalQualityScore!=null)this.textResult.qualityScore=d.finalQualityScore}); es.addEventListener('step',e=>{const step=this.json(e.data,{}); const i=this.textTimeline.findIndex(x=>(x.id&&step.id&&x.id===step.id)||((x.stepNo||-1)===(step.stepNo||-2)&&x.stepType===step.stepType)); if(i>=0)this.textTimeline.splice(i,1,step); else this.textTimeline.push(step); this.textTimeline.sort((a,b)=>(a.stepNo||0)-(b.stepNo||0)); this.tryPreview(step)}); es.addEventListener('result',e=>{const d=this.json(e.data,{}); this.textResult.finalText=d.finalResponse||''; this.textResult.selectedModel=d.selectedModel||this.textResult.selectedModel; this.textResult.needHumanReview=!!d.needHumanReview; this.textResult.reviewReasonCode=d.reviewReasonCode||this.textResult.reviewReasonCode; this.textResult.revisionApplied=!!d.revisionApplied; this.textResult.revisionSummary=d.revisionSummary||''; if(d.finalQualityScore!=null)this.textResult.qualityScore=d.finalQualityScore; if(d.finalResponse&&d.finalResponse!==this.previewSource)this.typewrite(d.finalResponse)}); es.addEventListener('done',e=>{const d=this.json(e.data,{}); this.textResult.status=d.terminalStatus||this.textResult.status; this.textLoading=false; this.closeText()}); es.onerror=()=>{this.textLoading=false; this.closeText()}},
             closeText(){if(this.textEventSource){this.textEventSource.close(); this.textEventSource=null}},
             tryPreview(step){if(!step||String(step.stepType||'').toUpperCase()!=='TRANSLATE')return; const out=this.json(step.outputJson,null); if(out&&out.translatedText)this.typewrite(out.translatedText)},
             typewrite(text){if(!text||text===this.previewSource)return; this.previewSource=text; if(this.typeTimer)clearInterval(this.typeTimer); this.textResult.previewText=''; let i=0; this.typeTimer=setInterval(()=>{if(i>=text.length){clearInterval(this.typeTimer); this.typeTimer=null; return} this.textResult.previewText+=text.charAt(i); i+=1},18)},

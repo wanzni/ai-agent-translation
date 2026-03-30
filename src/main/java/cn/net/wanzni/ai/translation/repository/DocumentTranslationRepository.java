@@ -138,12 +138,29 @@ public interface DocumentTranslationRepository extends JpaRepository<DocumentTra
     List<Object[]> countByStatus();
 
     /**
+     * 统计指定用户各状态任务数量
+     *
+     * @param userId 用户ID
+     * @return 状态统计结果
+     */
+    @Query("SELECT dt.status, COUNT(dt) FROM DocumentTranslation dt WHERE dt.userId = :userId GROUP BY dt.status")
+    List<Object[]> countByStatusForUser(@Param("userId") Long userId);
+
+    /**
      * 统计各文件类型的翻译次数
      * 
      * @return 文件类型统计结果
      */
     @Query("SELECT dt.fileType, COUNT(dt) FROM DocumentTranslation dt GROUP BY dt.fileType ORDER BY COUNT(dt) DESC")
     List<Object[]> countByFileType();
+
+    /**
+     * 统计各文档类型的数量与总文件大小
+     *
+     * @return 文档类型统计结果
+     */
+    @Query("SELECT dt.fileType, COUNT(dt), COALESCE(SUM(dt.fileSize), 0) FROM DocumentTranslation dt GROUP BY dt.fileType ORDER BY COUNT(dt) DESC")
+    List<Object[]> getDocumentTypeSummaries();
 
     /**
      * 统计各语言对的文档翻译次数
@@ -168,6 +185,15 @@ public interface DocumentTranslationRepository extends JpaRepository<DocumentTra
      */
     @Query("SELECT AVG(dt.qualityScore) FROM DocumentTranslation dt WHERE dt.qualityScore IS NOT NULL")
     Optional<Double> getAverageQualityScore();
+
+    /**
+     * 获取指定用户的平均质量评分
+     *
+     * @param userId 用户ID
+     * @return 平均质量评分
+     */
+    @Query("SELECT AVG(dt.qualityScore) FROM DocumentTranslation dt WHERE dt.userId = :userId AND dt.qualityScore IS NOT NULL")
+    Optional<Double> getAverageQualityScoreByUserId(@Param("userId") Long userId);
 
     /**
      * 查找高质量翻译文档（质量评分大于等于指定分数）
@@ -208,12 +234,31 @@ public interface DocumentTranslationRepository extends JpaRepository<DocumentTra
     long countByCreatedAtBetween(LocalDateTime startTime, LocalDateTime endTime);
 
     /**
+     * 统计指定用户在时间范围内的文档翻译次数
+     *
+     * @param userId 用户ID
+     * @param startTime 开始时间
+     * @param endTime 结束时间
+     * @return 翻译次数
+     */
+    long countByUserIdAndCreatedAtBetween(Long userId, LocalDateTime startTime, LocalDateTime endTime);
+
+    /**
      * 统计已完成任务的总下载次数
      * 
      * @return 总下载次数
      */
     @Query("SELECT SUM(dt.downloadCount) FROM DocumentTranslation dt WHERE dt.status = cn.net.wanzni.ai.translation.enums.ProcessingStatusEnum.COMPLETED")
     Optional<Long> getTotalDownloadCount();
+
+    /**
+     * 统计指定用户已完成任务的总下载次数
+     *
+     * @param userId 用户ID
+     * @return 总下载次数
+     */
+    @Query("SELECT COALESCE(SUM(dt.downloadCount), 0) FROM DocumentTranslation dt WHERE dt.userId = :userId AND dt.status = cn.net.wanzni.ai.translation.enums.ProcessingStatusEnum.COMPLETED")
+    Optional<Long> getTotalDownloadCountByUserId(@Param("userId") Long userId);
 
     /**
      * 删除指定时间之前的已完成任务
@@ -327,6 +372,15 @@ public interface DocumentTranslationRepository extends JpaRepository<DocumentTra
     List<Object[]> getFileTypeCountsByUserId(@Param("userId") Long userId);
 
     /**
+     * 获取指定用户各文档类型的数量与总文件大小
+     *
+     * @param userId 用户ID
+     * @return 文档类型统计结果
+     */
+    @Query("SELECT dt.fileType, COUNT(dt), COALESCE(SUM(dt.fileSize), 0) FROM DocumentTranslation dt WHERE dt.userId = :userId GROUP BY dt.fileType ORDER BY COUNT(dt) DESC")
+    List<Object[]> getDocumentTypeSummariesByUserId(@Param("userId") Long userId);
+
+    /**
      * 根据用户ID获取语言对统计
      * 
      * @param userId 用户ID
@@ -343,6 +397,48 @@ public interface DocumentTranslationRepository extends JpaRepository<DocumentTra
      */
     @Query("SELECT SUM(dt.characterCount) FROM DocumentTranslation dt WHERE dt.userId = :userId AND dt.status = cn.net.wanzni.ai.translation.enums.ProcessingStatusEnum.COMPLETED")
     Optional<Long> sumCharactersByUserId(@Param("userId") Long userId);
+
+    /**
+     * 统计全部任务的总文件大小
+     *
+     * @return 总文件大小
+     */
+    @Query("SELECT COALESCE(SUM(dt.fileSize), 0) FROM DocumentTranslation dt")
+    Optional<Long> sumAllFileSizes();
+
+    /**
+     * 统计指定用户任务的总文件大小
+     *
+     * @param userId 用户ID
+     * @return 总文件大小
+     */
+    @Query("SELECT COALESCE(SUM(dt.fileSize), 0) FROM DocumentTranslation dt WHERE dt.userId = :userId")
+    Optional<Long> sumFileSizesByUserId(@Param("userId") Long userId);
+
+    /**
+     * 按用户、状态、文件类型和文件名搜索文档翻译任务
+     *
+     * @param userId 用户ID，可为空
+     * @param status 状态，可为空
+     * @param fileType 文件类型，可为空
+     * @param keyword 文件名关键词，可为空
+     * @param pageable 分页参数
+     * @return 搜索结果分页
+     */
+    @Query("""
+            SELECT dt
+            FROM DocumentTranslation dt
+            WHERE (:userId IS NULL OR dt.userId = :userId)
+              AND (:status IS NULL OR dt.status = :status)
+              AND (:fileType IS NULL OR dt.fileType = :fileType)
+              AND (:keyword IS NULL OR LOWER(dt.originalFilename) LIKE LOWER(CONCAT('%', :keyword, '%')))
+            ORDER BY dt.createdAt DESC
+            """)
+    Page<DocumentTranslation> search(@Param("userId") Long userId,
+                                     @Param("status") ProcessingStatusEnum status,
+                                     @Param("fileType") DocumentTypeEnum fileType,
+                                     @Param("keyword") String keyword,
+                                     Pageable pageable);
 
     /**
      * 查找过期的翻译任务

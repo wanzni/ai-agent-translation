@@ -2,7 +2,7 @@
 <html lang="zh-CN" xmlns:th="http://www.thymeleaf.org"
       th:replace="~{layout/base :: layout(~{::title}, ~{::content}, ~{::page-styles}, ~{::page-scripts})}">
 <head>
-    <title>我的订单 - 智能翻译助手</title>
+    <title>我的订单</title>
     <th:block th:fragment="page-styles">
         <style>
             .orders-container { max-width: 1200px; margin: 0 auto; }
@@ -18,6 +18,10 @@
     <div class="orders-container">
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h1 class="h3 mb-0">我的订单</h1>
+            <div class="d-flex gap-2">
+                <a class="btn btn-outline-secondary" href="/">返回工作台</a>
+                <a class="btn btn-primary" href="/membership">开通会员</a>
+            </div>
         </div>
 
         <div id="ordersAlert" class="alert alert-info d-none"></div>
@@ -49,120 +53,134 @@
 
 <th:block th:fragment="page-scripts">
     <script>
-        function typeToZh(t) {
-            switch (String(t || '').toUpperCase()) {
-                case 'MONTHLY': return '包月会员';
-                case 'QUARTERLY': return '包季会员';
-                case 'YEARLY': return '包年会员';
-                default: return '未知类型';
-            }
-        }
-
-        function statusToZh(s) {
-            switch (String(s || '').toUpperCase()) {
-                case 'PENDING': return '待支付';
-                case 'PAID': return '已完成';
-                case 'CANCELLED': return '已取消';
-                case 'REFUNDED': return '已退款';
-                default: return '未知状态';
-            }
-        }
-
-        function payStatusToZh(s, expired) {
-            const S = String(s || '').toUpperCase();
-            if (S === 'PAID') return '已支付';
-            if (S === 'PENDING') return expired ? '已过期' : '待支付';
-            if (S === 'CANCELLED') return '已取消';
-            if (S === 'REFUNDED') return '已退款';
-            return '未知状态';
-        }
-
-        function fmtTime(t) {
-            if (!t) return '-';
-            // Expect LocalDateTime string e.g. "2025-11-20T12:34:56"
-            const d = (typeof t === 'string') ? new Date(t.replace('T', ' ')) : new Date(t);
-            if (isNaN(d.getTime())) return '-';
-            const pad = (n) => (n < 10 ? '0' + n : '' + n);
-            return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-        }
-
-        function getUserId() {
-            try {
-                const u = JSON.parse(localStorage.getItem('authUser') || 'null');
-                return u && (u.id != null) ? String(u.id) : null;
-            } catch (_) { return null; }
-        }
-
-        function isExpired(expiresAt) {
-            if (!expiresAt) return false;
-            const d = new Date((typeof expiresAt === 'string') ? expiresAt.replace('T',' ') : expiresAt);
-            return !isNaN(d.getTime()) && Date.now() > d.getTime();
-        }
-
-        function renderOrders(list) {
-            const tbody = document.querySelector('#ordersTable tbody');
-            tbody.innerHTML = '';
-            if (!Array.isArray(list) || list.length === 0) {
-                const alert = document.getElementById('ordersAlert');
-                alert.textContent = '暂无订单，去会员页开通试试吧！';
-                alert.classList.remove('d-none');
-                return;
-            }
-            for (const o of list) {
-                const tr = document.createElement('tr');
-                const expired = isExpired(o.expiresAt);
-                tr.innerHTML = `
-                    <td><a href="/orders/${o.orderNo}">${o.orderNo}</a></td>
-                    <td>${typeToZh(o.type)}</td>
-                    <td>${o.months}</td>
-                    <td>${o.amount} ${o.currency || 'CNY'}</td>
-                    <td>
-                        <span class="badge ${o.status==='PENDING' ? 'bg-warning' : (o.status==='PAID' ? 'bg-success' : 'bg-secondary')} order-status-badge">${statusToZh(o.status)}</span>
-                    </td>
-                    <td>
-                        <span class="badge ${o.status==='PAID' ? 'bg-success' : (o.status==='PENDING' ? (expired ? 'bg-secondary' : 'bg-warning') : 'bg-secondary')} order-status-badge">${payStatusToZh(o.status, expired)}</span>
-                    </td>
-                    <td>${fmtTime(o.createdAt)}</td>
-                    <td>${fmtTime(o.expiresAt)}</td>
-                    <td class="d-flex gap-2 order-actions">
-                        <a class="btn btn-sm btn-outline-primary text-nowrap" href="/orders/${o.orderNo}">查看详情</a>
-                        ${o.status==='PENDING' && !expired ? `<a class="btn btn-sm btn-primary text-nowrap" href="/membership/pay?orderNo=${o.orderNo}">去支付</a>` : ``}
-                    </td>`;
-                tbody.appendChild(tr);
-            }
-        }
-
-        async function loadOrders() {
-            const userId = getUserId();
-            if (!userId) {
-                const alert = document.getElementById('ordersAlert');
-                alert.textContent = '请先登录以查看您的订单。';
-                alert.classList.remove('d-none');
-                return;
-            }
-            try {
-                const res = await fetch(`/api/membership/orders?userId=${encodeURIComponent(userId)}`);
-                const json = await res.json();
-                let list = null;
-                // 兼容统一响应包装 ApiResponse { success, data }
-                if (json && json.data) {
-                    // 兼容我们在后端返回 Map{"data": [...]} 的结构
-                    list = Array.isArray(json.data?.data) ? json.data.data
-                          : (Array.isArray(json.data) ? json.data : null);
+        (function () {
+            function getAuthUser() {
+                try {
+                    return JSON.parse(localStorage.getItem('authUser') || 'null');
+                } catch (_) {
+                    return null;
                 }
-                // 兜底：若依然不是数组，尝试直接使用原始对象
-                if (!Array.isArray(list)) {
-                    list = Array.isArray(json) ? json : [];
-                }
-                renderOrders(list);
-            } catch (e) {
-                const alert = document.getElementById('ordersAlert');
-                alert.textContent = '加载订单失败，请稍后重试。';
-                alert.classList.remove('d-none');
             }
-        }
 
-        document.addEventListener('DOMContentLoaded', loadOrders);
+            function authFetch(url, options) {
+                return window.authorizedFetch ? window.authorizedFetch(url, options) : fetch(url, options);
+            }
+
+            function unwrapApiPayload(payload) {
+                if (payload && typeof payload === 'object' && Object.prototype.hasOwnProperty.call(payload, 'data')) {
+                    return payload.data;
+                }
+                return payload;
+            }
+
+            function typeToZh(type) {
+                switch (String(type || '').toUpperCase()) {
+                    case 'MONTHLY': return '包月会员';
+                    case 'QUARTERLY': return '包季会员';
+                    case 'YEARLY': return '包年会员';
+                    default: return '未知类型';
+                }
+            }
+
+            function statusToZh(status) {
+                switch (String(status || '').toUpperCase()) {
+                    case 'PENDING': return '待支付';
+                    case 'PAID': return '已完成';
+                    case 'CANCELLED': return '已取消';
+                    case 'REFUNDED': return '已退款';
+                    default: return '未知状态';
+                }
+            }
+
+            function payStatusToZh(status, expired) {
+                const value = String(status || '').toUpperCase();
+                if (value === 'PAID') return '已支付';
+                if (value === 'PENDING') return expired ? '已过期' : '待支付';
+                if (value === 'CANCELLED') return '已取消';
+                if (value === 'REFUNDED') return '已退款';
+                return '未知状态';
+            }
+
+            function formatDateTime(value) {
+                if (!value) return '-';
+                const date = typeof value === 'string' ? new Date(value.replace('T', ' ')) : new Date(value);
+                if (Number.isNaN(date.getTime())) return '-';
+                const pad = num => String(num).padStart(2, '0');
+                return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+            }
+
+            function isExpired(expiresAt) {
+                if (!expiresAt) return false;
+                const date = new Date(typeof expiresAt === 'string' ? expiresAt.replace('T', ' ') : expiresAt);
+                return !Number.isNaN(date.getTime()) && Date.now() > date.getTime();
+            }
+
+            function showAlert(message, type) {
+                const alertEl = document.getElementById('ordersAlert');
+                alertEl.className = `alert alert-${type}`;
+                alertEl.textContent = message;
+                alertEl.classList.remove('d-none');
+            }
+
+            function hideAlert() {
+                document.getElementById('ordersAlert').classList.add('d-none');
+            }
+
+            function renderOrders(list) {
+                const tbody = document.querySelector('#ordersTable tbody');
+                tbody.innerHTML = '';
+                if (!Array.isArray(list) || list.length === 0) {
+                    showAlert('当前没有会员订单，可以前往会员中心创建订单。', 'info');
+                    return;
+                }
+                hideAlert();
+                list.forEach(order => {
+                    const expired = isExpired(order.expiresAt);
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td><a href="/orders/${order.orderNo}">${order.orderNo}</a></td>
+                        <td>${typeToZh(order.type)}</td>
+                        <td>${order.months ?? '-'}</td>
+                        <td>${order.amount ?? '-'} ${order.currency || 'CNY'}</td>
+                        <td><span class="badge ${order.status === 'PENDING' ? 'bg-warning text-dark' : (order.status === 'PAID' ? 'bg-success' : 'bg-secondary')} order-status-badge">${statusToZh(order.status)}</span></td>
+                        <td><span class="badge ${order.status === 'PAID' ? 'bg-success' : (order.status === 'PENDING' ? (expired ? 'bg-secondary' : 'bg-warning text-dark') : 'bg-secondary')} order-status-badge">${payStatusToZh(order.status, expired)}</span></td>
+                        <td>${formatDateTime(order.createdAt)}</td>
+                        <td>${formatDateTime(order.expiresAt)}</td>
+                        <td class="d-flex gap-2 order-actions">
+                            <a class="btn btn-sm btn-outline-primary" href="/orders/${order.orderNo}">订单详情</a>
+                            ${order.status === 'PENDING' && !expired ? `<a class="btn btn-sm btn-primary" href="/membership/pay?orderNo=${order.orderNo}">继续支付</a>` : ''}
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            }
+
+            async function loadOrders() {
+                const user = getAuthUser();
+                if (!user || user.id == null) {
+                    showAlert('请先登录后查看订单列表。', 'warning');
+                    return;
+                }
+                try {
+                    const resp = await authFetch('/api/membership/orders', { authPromptOn401: true });
+                    if (!resp.ok) {
+                        throw new Error('load orders failed');
+                    }
+                    const payload = await resp.json();
+                    const result = unwrapApiPayload(payload);
+                    const list = Array.isArray(result && result.data) ? result.data : (Array.isArray(result) ? result : []);
+                    renderOrders(list);
+                } catch (e) {
+                    showAlert('加载订单失败，请稍后重试。', 'danger');
+                }
+            }
+
+            document.addEventListener('DOMContentLoaded', () => {
+                const boot = window.ensureAuthHydrated ? window.ensureAuthHydrated() : Promise.resolve();
+                Promise.resolve(boot).finally(() => loadOrders());
+            });
+            window.addEventListener('auth-state-changed', loadOrders);
+        })();
     </script>
 </th:block>
 </body>

@@ -690,6 +690,7 @@
                     } catch (e) { /* ignore cookie set error */ }
                 }
                 if (data.user) localStorage.setItem('authUser', JSON.stringify(data.user));
+                dispatchAuthStateChanged(data.user || null);
                 // 登录成功，隐藏错误提示
                 hideLoginError();
                 Utils.showToast('登录成功', 'success');
@@ -721,6 +722,81 @@
             const fromLocal = localStorage.getItem('authToken');
             return (fromLocal && fromLocal.trim()) ? fromLocal.trim() : null;
         }
+
+        function parseStoredAuthUser() {
+            try {
+                return JSON.parse(localStorage.getItem('authUser') || 'null');
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function unwrapApiPayload(payload) {
+            if (payload && typeof payload === 'object' && Object.prototype.hasOwnProperty.call(payload, 'data')) {
+                return payload.data;
+            }
+            return payload;
+        }
+
+        function dispatchAuthStateChanged(user) {
+            try {
+                window.dispatchEvent(new CustomEvent('auth-state-changed', {
+                    detail: { user: user || null }
+                }));
+            } catch (e) {
+                // ignore
+            }
+        }
+
+        function clearStoredAuth() {
+            try { localStorage.removeItem('authUser'); } catch (e) {}
+            try { localStorage.removeItem('authToken'); } catch (e) {}
+            try { document.cookie = 'auth_token=;path=/;max-age=0'; } catch (e) {}
+        }
+
+        async function hydrateAuthUserFromSession() {
+            const token = getAuthToken();
+            const cachedUser = parseStoredAuthUser();
+            if (!token) {
+                clearStoredAuth();
+                dispatchAuthStateChanged(null);
+                return null;
+            }
+            try {
+                const headers = {};
+                if (token) {
+                    headers['Authorization'] = `Bearer ${token}`;
+                }
+                const res = await fetch('/api/users/me', { headers: headers });
+                if (!res.ok) {
+                    if (res.status === 401) {
+                        clearStoredAuth();
+                        dispatchAuthStateChanged(null);
+                        return null;
+                    }
+                    dispatchAuthStateChanged(cachedUser);
+                    return cachedUser;
+                }
+                const json = await res.json();
+                const user = unwrapApiPayload(json);
+                if (user && user.id != null) {
+                    localStorage.setItem('authUser', JSON.stringify(user));
+                    dispatchAuthStateChanged(user);
+                    return user;
+                }
+            } catch (e) {
+                // ignore
+            }
+            dispatchAuthStateChanged(cachedUser);
+            return cachedUser;
+        }
+
+        window.ensureAuthHydrated = function () {
+            if (!window.__authHydrationPromise) {
+                window.__authHydrationPromise = hydrateAuthUserFromSession();
+            }
+            return window.__authHydrationPromise;
+        };
 
         // 全局拦截：默认不对401进行跳转，仅在用户交互时由 authorizedFetch 控制弹窗
         (function(){
@@ -867,6 +943,7 @@
                 // ignore
             } finally {
                 updateNavUserInfo(null);
+                dispatchAuthStateChanged(null);
             }
         }
 
@@ -909,7 +986,7 @@
             if (logoutLink) logoutLink.addEventListener('click', (e) => { e.preventDefault(); handleLogout(); });
 
             // 页面加载时根据本地存储更新右上角头像与昵称
-            updateNavUserInfo();
+            window.ensureAuthHydrated().finally(() => updateNavUserInfo());
         });
 
         async function handleRegister() {
