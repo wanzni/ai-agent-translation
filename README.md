@@ -30,6 +30,7 @@
 - 在真实持久化 workflow 节点发布 SSE 事件，前端可基于 timeline 展示任务进展，而不是等整条流程结束后才看到结果
 - 落地 Quality Gate、人工复核、review queue、review 统计、人工复核结果回流 TM
 - 引入 RAG fallback，在术语命中不足或上下文不足时补充检索增强
+- 为质量评估链路补充结构化输出收口，支持 `json_schema`、`json_object` 与 `prompt-only` 模式降级，并结合第三方 `json-repair` 提升 JSON 解析稳定性
 - 落地 Eval-driven revise loop：初译后先评估，只对硬规则问题做单次自动修正，失败后转人工复核
 - 修复 `translationEngine` 参数语义链断裂问题，打通前端引擎选择到真实翻译执行链路
 - 首页已接回真实登录、会员、订单、点数与 mock 支付链路，支持展示用户状态与会员状态
@@ -51,6 +52,9 @@
 - review 统计接口
 - 人工复核结果回流 TM
 - 敏感内容可直接跳过自动修正，进入人工复核
+- 质量评估链路支持强类型结构化解析，不再直接依赖 `Map` 反序列化模型输出
+- 支持 JSON 提取、第三方 `json-repair` 自愈、单次 repair retry 与 heuristic fallback
+- `assessmentDetails` 中补充 `structuredOutputMode`、`structuredOutputPath`、`structuredOutputValid` 等可观测字段，便于排查结构化输出质量
 
 ### 3. Eval-driven Revise Loop
 
@@ -156,6 +160,7 @@
 - 数据层：Spring Data JPA、MySQL
 - 缓存：Redis
 - 文件处理：Apache POI、PDFBox、MinIO
+- 结构化输出处理：JSON Schema、`json-repair`
 - 鉴权：JWT、拦截器鉴权
 - 其他：测试基于 Spring Boot Test
 
@@ -264,6 +269,7 @@ mvn -q "-Dtest=AgentTaskControllerTest,AgentWorkflowServiceImplTest" test
 - 文本翻译升级为真实 task workflow SSE
 - 首页与 `translate.html` 已接入 workflow 主链事件
 - `translationEngine` 参数语义链修复完成
+- 质量评估链路已升级为结构化输出收口方案，支持 `json_schema` / `json_object` / `prompt-only` 模式降级，并引入第三方 `json-repair`
 - Eval-driven revise loop 已并入主 workflow
 - 首页、会员、订单、个人资料、支付页已重新接回登录态与会员链路
 - 支付页保留 mock 支付闭环，适合本地演示
@@ -273,4 +279,3 @@ mvn -q "-Dtest=AgentTaskControllerTest,AgentWorkflowServiceImplTest" test
 - 当前项目更适合作为“AI Agent 工作流后端项目”理解，而不是多智能体平台
 - 支付链路以 mock 演示为主，不要求真实支付网关落地
 - revise loop 当前只对部分模型与硬规则问题启用，这是有意收敛后的第一版实现
-
