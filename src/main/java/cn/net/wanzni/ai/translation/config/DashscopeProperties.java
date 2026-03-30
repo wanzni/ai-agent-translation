@@ -37,6 +37,11 @@ public class DashscopeProperties {
      */
     private Chat chat = new Chat();
 
+    /**
+     * 质量评估结构化输出配置
+     */
+    private Quality quality = new Quality();
+
     public String getBaseUrl() { return baseUrl; }
     public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
 
@@ -51,6 +56,9 @@ public class DashscopeProperties {
 
     public Chat getChat() { return chat; }
     public void setChat(Chat chat) { this.chat = chat; }
+
+    public Quality getQuality() { return quality; }
+    public void setQuality(Quality quality) { this.quality = quality; }
 
     /**
      * 解析并获取最终生效的模型名称。
@@ -97,5 +105,31 @@ public class DashscopeProperties {
 
         public String getModel() { return model; }
         public void setModel(String model) { this.model = model; }
+    }
+
+    public static class Quality {
+        private StructuredOutput structuredOutput = new StructuredOutput();
+
+        public StructuredOutput getStructuredOutput() { return structuredOutput; }
+        public void setStructuredOutput(StructuredOutput structuredOutput) { this.structuredOutput = structuredOutput; }
+    }
+
+    public static class StructuredOutput {
+        private boolean enabled = true;
+        private String prefer = "json_schema";
+        private boolean repairEnabled = true;
+        private int maxRetries = 1;
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+
+        public String getPrefer() { return prefer; }
+        public void setPrefer(String prefer) { this.prefer = prefer; }
+
+        public boolean isRepairEnabled() { return repairEnabled; }
+        public void setRepairEnabled(boolean repairEnabled) { this.repairEnabled = repairEnabled; }
+
+        public int getMaxRetries() { return maxRetries; }
+        public void setMaxRetries(int maxRetries) { this.maxRetries = maxRetries; }
     }
 }

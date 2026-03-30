@@ -6,6 +6,10 @@ import cn.net.wanzni.ai.translation.dto.QualityAssessmentResponse;
 import cn.net.wanzni.ai.translation.entity.QualityAssessment;
 import cn.net.wanzni.ai.translation.repository.QualityAssessmentRepository;
 import cn.net.wanzni.ai.translation.service.QualityAssessmentService;
+import cn.net.wanzni.ai.translation.service.impl.quality.QualityAssessmentLlmPayload;
+import cn.net.wanzni.ai.translation.service.impl.quality.QualityAssessmentStructuredParser;
+import cn.net.wanzni.ai.translation.service.impl.quality.StructuredOutputMode;
+import cn.net.wanzni.ai.translation.service.impl.quality.StructuredOutputPath;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,7 +22,6 @@ import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -26,6 +29,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -60,26 +64,27 @@ public class QualityAssessmentServiceImpl implements QualityAssessmentService {
     private final QualityAssessmentRepository repository;
     private final ObjectMapper objectMapper;
     private final WebClient webClient = WebClient.builder().build();
+    private QualityAssessmentStructuredParser structuredParser;
 
     @Override
-    @SuppressWarnings("unchecked")
     public QualityAssessmentResponse assess(QualityAssessmentRequest request) throws Exception {
         long start = System.currentTimeMillis();
 
         RuleCheckResult ruleCheckResult = evaluateRules(request);
-        Map<String, Object> json = resolveModelOrHeuristicResult(request);
+        ModelEvaluationResult modelResult = resolveModelOrHeuristicResult(request);
+        QualityAssessmentLlmPayload payload = modelResult.payload();
 
-        int acc = toScore(json.get("accuracyScore"));
-        int flu = toScore(json.get("fluencyScore"));
-        int con = toScore(json.get("consistencyScore"));
-        int comp = toScore(json.get("completenessScore"));
-        int overall = json.containsKey("overallScore")
-                ? toScore(json.get("overallScore"))
+        int acc = payload.accuracyScore();
+        int flu = payload.fluencyScore();
+        int con = payload.consistencyScore();
+        int comp = payload.completenessScore();
+        int overall = payload.overallScore() != null
+                ? payload.overallScore()
                 : (int) Math.round(acc * 0.4 + flu * 0.3 + con * 0.2 + comp * 0.1);
 
-        List<String> suggestions = extractSuggestions(json);
-        List<String> attention = extractList(json, "attentionPoints");
-        List<String> pros = extractList(json, "strengths");
+        List<String> suggestions = payload.improvementSuggestions();
+        List<String> attention = payload.attentionPoints();
+        List<String> pros = payload.strengths();
 
         if (suggestions.isEmpty() && overall < 85) {
             suggestions = generateHeuristicSuggestions(acc, flu, con, comp);
@@ -103,8 +108,14 @@ public class QualityAssessmentServiceImpl implements QualityAssessmentService {
         boolean needsRetry = !hardRulePassed && !sensitiveContentDetected;
         long cost = System.currentTimeMillis() - start;
 
-        Map<String, Object> assessmentDetails = new LinkedHashMap<>((Map<String, Object>) json.getOrDefault("assessmentDetails", Map.of()));
+        Map<String, Object> assessmentDetails = new LinkedHashMap<>(payload.assessmentDetails());
         assessmentDetails.put("ruleCheck", ruleCheckResult.details());
+        assessmentDetails.put("structuredOutputMode", modelResult.mode().name());
+        assessmentDetails.put("structuredOutputPath", modelResult.path().name());
+        assessmentDetails.put("structuredOutputValid", modelResult.valid());
+        assessmentDetails.put("structuredOutputRawLength", modelResult.rawLength());
+        assessmentDetails.put("structuredOutputRepairApplied", modelResult.repairApplied());
+        assessmentDetails.put("structuredOutputRetryUsed", modelResult.retryUsed());
 
         QualityAssessmentResponse response = QualityAssessmentResponse.builder()
                 .overallScore(overall)
@@ -138,9 +149,9 @@ public class QualityAssessmentServiceImpl implements QualityAssessmentService {
         return response;
     }
 
-    private Map<String, Object> resolveModelOrHeuristicResult(QualityAssessmentRequest request) throws Exception {
+    private ModelEvaluationResult resolveModelOrHeuristicResult(QualityAssessmentRequest request) throws Exception {
         if (!StringUtils.hasText(properties.getApiKey())) {
-            return buildHeuristicEvaluation(request.getSourceText(), request.getTargetText());
+            return heuristicResult(request.getSourceText(), request.getTargetText(), "API_KEY_MISSING");
         }
 
         String systemPrompt = buildSystemPrompt(request.getTargetLanguage());
@@ -150,6 +161,78 @@ public class QualityAssessmentServiceImpl implements QualityAssessmentService {
                 "\n\nTarget Text:\n" + request.getTargetText() +
                 "\n\nTask: Evaluate the translation quality and respond with ONLY JSON as specified.";
 
+        if (!properties.getQuality().getStructuredOutput().isEnabled()) {
+            return resolveWithMode(request, systemPrompt, userPrompt, StructuredOutputMode.PROMPT_ONLY);
+        }
+
+        for (StructuredOutputMode mode : preferredModes()) {
+            try {
+                return resolveWithMode(request, systemPrompt, userPrompt, mode);
+            } catch (Exception apiError) {
+                if (mode != StructuredOutputMode.PROMPT_ONLY && supportsStructuredFallback(apiError)) {
+                    log.warn("Structured output mode {} not supported, fallback to next mode: {}", mode, apiError.getMessage());
+                    continue;
+                }
+                log.warn("Fallback to heuristic quality evaluation under mode {}: {}", mode, apiError.getMessage());
+                return heuristicResult(request.getSourceText(), request.getTargetText(), "API_CALL_FAILED");
+            }
+        }
+
+        return heuristicResult(request.getSourceText(), request.getTargetText(), "STRUCTURED_MODE_UNSUPPORTED");
+    }
+
+    private ModelEvaluationResult resolveWithMode(QualityAssessmentRequest request,
+                                                  String systemPrompt,
+                                                  String userPrompt,
+                                                  StructuredOutputMode mode) throws Exception {
+        String content = callQualityModel(systemPrompt, userPrompt, mode);
+        QualityAssessmentStructuredParser.ParseResult parseResult = parser().parse(
+                content,
+                properties.getQuality().getStructuredOutput().isRepairEnabled()
+        );
+        if (parseResult.success()) {
+            return new ModelEvaluationResult(
+                    parseResult.payload(),
+                    mode,
+                    parseResult.path(),
+                    true,
+                    parseResult.normalizedContent() == null ? 0 : parseResult.normalizedContent().length(),
+                    parseResult.repairApplied(),
+                    false
+            );
+        }
+
+        int retries = Math.max(0, properties.getQuality().getStructuredOutput().getMaxRetries());
+        if (retries > 0) {
+            String retryPrompt = buildRepairPrompt(content);
+            String repairedContent = callQualityModel(
+                    buildRepairSystemPrompt(),
+                    retryPrompt,
+                    mode == StructuredOutputMode.PROMPT_ONLY ? StructuredOutputMode.PROMPT_ONLY : StructuredOutputMode.JSON_OBJECT
+            );
+            QualityAssessmentStructuredParser.ParseResult retryResult = parser().parseRetried(repairedContent);
+            if (retryResult.success()) {
+                return new ModelEvaluationResult(
+                        retryResult.payload(),
+                        mode,
+                        StructuredOutputPath.RETRIED,
+                        true,
+                        retryResult.normalizedContent() == null ? 0 : retryResult.normalizedContent().length(),
+                        parseResult.repairApplied() || retryResult.repairApplied(),
+                        true
+                );
+            }
+            log.warn("Quality assessment repair retry failed: initial={}, retry={}", parseResult.error(), retryResult.error());
+        } else {
+            log.warn("Quality assessment parse failed without retry: {}", parseResult.error());
+        }
+
+        return heuristicResult(request.getSourceText(), request.getTargetText(), "PARSE_FAILED");
+    }
+
+    private String callQualityModel(String systemPrompt,
+                                    String userPrompt,
+                                    StructuredOutputMode mode) {
         Map<String, Object> body = new HashMap<>();
         body.put("model", properties.resolveModel());
         body.put("messages", List.of(
@@ -159,36 +242,84 @@ public class QualityAssessmentServiceImpl implements QualityAssessmentService {
         if (properties.getTemperature() != null) {
             body.put("temperature", properties.getTemperature());
         }
+        applyResponseFormat(body, mode);
 
-        String content;
-        try {
-            Map<String, Object> resp = webClient.post()
-                    .uri(properties.getBaseUrl())
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .accept(MediaType.APPLICATION_JSON)
-                    .header("Authorization", "Bearer " + properties.getApiKey())
-                    .bodyValue(body)
-                    .retrieve()
-                    .onStatus(HttpStatusCode::is4xxClientError, (ClientResponse r) ->
-                            r.bodyToMono(String.class).flatMap(errBody ->
-                                    Mono.error(new RuntimeException("DashScope 4xx: " + r.statusCode() + " - " + errBody))))
-                    .onStatus(HttpStatusCode::is5xxServerError, (ClientResponse r) ->
-                            r.bodyToMono(String.class).flatMap(errBody ->
-                                    Mono.error(new RuntimeException("DashScope 5xx: " + r.statusCode() + " - " + errBody))))
-                    .bodyToMono(Map.class)
-                    .block();
-            content = extractContent(resp);
-        } catch (Exception apiError) {
-            log.warn("Fallback to heuristic quality evaluation: {}", apiError.getMessage());
-            return buildHeuristicEvaluation(request.getSourceText(), request.getTargetText());
-        }
+        Map<String, Object> resp = webClient.post()
+                .uri(properties.getBaseUrl())
+                .contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.APPLICATION_JSON)
+                .header("Authorization", "Bearer " + properties.getApiKey())
+                .bodyValue(body)
+                .retrieve()
+                .onStatus(HttpStatusCode::is4xxClientError, (ClientResponse r) ->
+                        r.bodyToMono(String.class).flatMap(errBody ->
+                                Mono.error(new RuntimeException("DashScope 4xx: " + r.statusCode() + " - " + errBody))))
+                .onStatus(HttpStatusCode::is5xxServerError, (ClientResponse r) ->
+                        r.bodyToMono(String.class).flatMap(errBody ->
+                                Mono.error(new RuntimeException("DashScope 5xx: " + r.statusCode() + " - " + errBody))))
+                .bodyToMono(Map.class)
+                .block();
+        return extractContent(resp);
+    }
 
-        try {
-            return objectMapper.readValue(content, Map.class);
-        } catch (Exception e) {
-            log.warn("Quality assessment parse failed, fallback to heuristic result: {}", content);
-            return buildHeuristicEvaluation(request.getSourceText(), request.getTargetText());
+    private void applyResponseFormat(Map<String, Object> body, StructuredOutputMode mode) {
+        if (mode == StructuredOutputMode.JSON_SCHEMA) {
+            Map<String, Object> jsonSchema = new LinkedHashMap<>();
+            jsonSchema.put("name", "quality_assessment_result");
+            jsonSchema.put("strict", true);
+            jsonSchema.put("schema", QualityAssessmentStructuredParser.buildJsonSchemaDefinition());
+            body.put("response_format", Map.of(
+                    "type", "json_schema",
+                    "json_schema", jsonSchema
+            ));
+        } else if (mode == StructuredOutputMode.JSON_OBJECT) {
+            body.put("response_format", Map.of("type", "json_object"));
         }
+    }
+
+    private List<StructuredOutputMode> preferredModes() {
+        String prefer = properties.getQuality().getStructuredOutput().getPrefer();
+        if ("json_object".equalsIgnoreCase(prefer)) {
+            return List.of(StructuredOutputMode.JSON_OBJECT, StructuredOutputMode.PROMPT_ONLY);
+        }
+        return List.of(StructuredOutputMode.JSON_SCHEMA, StructuredOutputMode.JSON_OBJECT, StructuredOutputMode.PROMPT_ONLY);
+    }
+
+    private boolean supportsStructuredFallback(Exception apiError) {
+        String message = Objects.toString(apiError.getMessage(), "").toLowerCase(Locale.ROOT);
+        return message.contains("response_format")
+                || message.contains("json_schema")
+                || message.contains("json_object")
+                || message.contains("not support")
+                || message.contains("unsupported")
+                || message.contains("invalid parameter");
+    }
+
+    private String buildRepairSystemPrompt() {
+        return "You are a JSON repair assistant. Return ONLY valid JSON that matches the requested schema. Do not re-evaluate the translation.";
+    }
+
+    private String buildRepairPrompt(String rawContent) {
+        return "Fix the following model output into a valid JSON object that matches this schema exactly.\n" +
+                "Do not add explanations and do not re-evaluate the translation.\n" +
+                "Required fields: accuracyScore, fluencyScore, consistencyScore, completenessScore.\n" +
+                "Optional fields: overallScore, improvementSuggestions, attentionPoints, strengths, assessmentDetails.\n" +
+                "Rules: all scores must be integers in [0,100]; lists must contain strings; assessmentDetails must be an object.\n" +
+                "Return ONLY JSON.\n\n" +
+                "[Raw Output]\n" + rawContent;
+    }
+
+    private ModelEvaluationResult heuristicResult(String sourceText, String targetText, String reason) {
+        QualityAssessmentLlmPayload payload = buildHeuristicEvaluation(sourceText, targetText, reason);
+        return new ModelEvaluationResult(
+                payload,
+                StructuredOutputMode.HEURISTIC,
+                StructuredOutputPath.FALLBACK,
+                false,
+                0,
+                false,
+                false
+        );
     }
 
     private void saveQualityAssessmentEntity(QualityAssessmentRequest request,
@@ -492,19 +623,6 @@ public class QualityAssessmentServiceImpl implements QualityAssessmentService {
         return "{}";
     }
 
-    private int toScore(Object v) {
-        if (v == null) return 0;
-        int s;
-        try {
-            s = (v instanceof Number) ? ((Number) v).intValue() : Integer.parseInt(String.valueOf(v));
-        } catch (Exception e) {
-            s = 0;
-        }
-        if (s < 0) s = 0;
-        if (s > 100) s = 100;
-        return s;
-    }
-
     private String qualityLevel(int overall) {
         if (overall >= 90) return "浼樼";
         if (overall >= 80) return "鑹ソ";
@@ -535,7 +653,7 @@ public class QualityAssessmentServiceImpl implements QualityAssessmentService {
                 "All scores must be integers in [0,100]. Do not include any commentary or markdown.";
     }
 
-    private Map<String, Object> buildHeuristicEvaluation(String src, String tgt) {
+    private QualityAssessmentLlmPayload buildHeuristicEvaluation(String src, String tgt, String reason) {
         int srcLen = src != null ? src.length() : 0;
         int tgtLen = tgt != null ? tgt.length() : 0;
         double lenRatio = (srcLen > 0) ? (tgtLen / (double) srcLen) : 1.0;
@@ -553,54 +671,19 @@ public class QualityAssessmentServiceImpl implements QualityAssessmentService {
         Map<String, Object> details = new HashMap<>();
         details.put("lengthRatio", lenRatio);
         details.put("note", "heuristic-evaluation");
+        details.put("fallbackReason", reason);
 
-        Map<String, Object> result = new HashMap<>();
-        result.put("overallScore", overall);
-        result.put("accuracyScore", acc);
-        result.put("fluencyScore", flu);
-        result.put("consistencyScore", con);
-        result.put("completenessScore", comp);
-        result.put("improvementSuggestions", generateHeuristicSuggestions(acc, flu, con, comp));
-        result.put("attentionPoints", generateDefaultAttentionPoints());
-        result.put("strengths", generateDefaultStrengths());
-        result.put("assessmentDetails", details);
-        return result;
-    }
-
-    private List<String> extractSuggestions(Map<String, Object> json) {
-        if (json == null) return List.of();
-        for (String key : List.of("improvementSuggestions", "suggestions", "improvements", "recommendations", "advice")) {
-            if (json.containsKey(key)) {
-                List<String> list = toStringList(json.get(key));
-                if (!list.isEmpty()) {
-                    return list;
-                }
-            }
-        }
-        return List.of();
-    }
-
-    private List<String> extractList(Map<String, Object> json, String key) {
-        if (json == null || key == null) return List.of();
-        return toStringList(json.get(key));
-    }
-
-    private List<String> toStringList(Object v) {
-        if (v == null) return List.of();
-        try {
-            if (v instanceof Collection<?> collection) {
-                return collection.stream().map(String::valueOf).map(String::trim).filter(StringUtils::hasText).toList();
-            }
-            if (v instanceof String s) {
-                String t = s.trim();
-                if (t.startsWith("[") && t.endsWith("]")) {
-                    return objectMapper.readValue(t, objectMapper.getTypeFactory().constructCollectionType(List.class, String.class));
-                }
-                return StringUtils.hasText(t) ? List.of(t) : List.of();
-            }
-        } catch (Exception ignored) {
-        }
-        return List.of();
+        return QualityAssessmentLlmPayload.builder()
+                .overallScore(overall)
+                .accuracyScore(acc)
+                .fluencyScore(flu)
+                .consistencyScore(con)
+                .completenessScore(comp)
+                .improvementSuggestions(generateHeuristicSuggestions(acc, flu, con, comp))
+                .attentionPoints(generateDefaultAttentionPoints())
+                .strengths(generateDefaultStrengths())
+                .assessmentDetails(details)
+                .build();
     }
 
     private List<String> generateHeuristicSuggestions(int acc, int flu, int con, int comp) {
@@ -621,6 +704,13 @@ public class QualityAssessmentServiceImpl implements QualityAssessmentService {
         return List.of("整体可读性良好", "信息基本完整", "语义传达较为清晰");
     }
 
+    private QualityAssessmentStructuredParser parser() {
+        if (structuredParser == null) {
+            structuredParser = new QualityAssessmentStructuredParser(objectMapper);
+        }
+        return structuredParser;
+    }
+
     private record RuleCheckResult(int numberScore,
                                    int terminologyScore,
                                    int formatScore,
@@ -628,5 +718,14 @@ public class QualityAssessmentServiceImpl implements QualityAssessmentService {
                                    boolean sensitiveContentDetected,
                                    List<String> rejectReasons,
                                    Map<String, Object> details) {
+    }
+
+    private record ModelEvaluationResult(QualityAssessmentLlmPayload payload,
+                                         StructuredOutputMode mode,
+                                         StructuredOutputPath path,
+                                         boolean valid,
+                                         int rawLength,
+                                         boolean repairApplied,
+                                         boolean retryUsed) {
     }
 }
