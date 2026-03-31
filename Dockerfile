@@ -6,7 +6,7 @@ COPY pom.xml ./
 COPY src ./src
 COPY database ./database
 
-RUN --mount=type=cache,id=m2,target=/root/.m2 mvn -q -DskipTests package
+RUN mvn -q -DskipTests package
 
 FROM eclipse-temurin:21-jre
 
