@@ -13,3 +13,5 @@ docs/*
 /heap_dump.hprof
 application-dev.yml
 application.yml
+src/main/resources/application-dev-private.yml
+src/main/resources/application-local-backup.md

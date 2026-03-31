@@ -1,0 +1,101 @@
+server:
+  port: ${PORT:8080}
+
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+        dialect: org.hibernate.dialect.MySQLDialect
+
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+      password: ${SPRING_DATA_REDIS_PASSWORD:}
+      database: ${SPRING_DATA_REDIS_DATABASE:0}
+      timeout: ${SPRING_DATA_REDIS_TIMEOUT:10000ms}
+      lettuce:
+        pool:
+          max-active: ${SPRING_DATA_REDIS_POOL_MAX_ACTIVE:20}
+          max-idle: ${SPRING_DATA_REDIS_POOL_MAX_IDLE:10}
+          min-idle: ${SPRING_DATA_REDIS_POOL_MIN_IDLE:5}
+          max-wait: ${SPRING_DATA_REDIS_POOL_MAX_WAIT:5000ms}
+
+    elasticsearch:
+      repositories:
+        enabled: false
+
+  thymeleaf:
+    cache: true
+
+ai:
+  dashscope:
+    enabled: ${AI_DASHSCOPE_ENABLED:false}
+    api-key: ${AI_DASHSCOPE_API_KEY:}
+    chat:
+      options:
+        model: ${AI_DASHSCOPE_CHAT_MODEL:qwen-plus}
+        temperature: ${AI_DASHSCOPE_CHAT_TEMPERATURE:0.7}
+
+  aliyun:
+    access-key-id: ${AI_ALIYUN_ACCESS_KEY_ID:}
+    access-key-secret: ${AI_ALIYUN_ACCESS_KEY_SECRET:}
+    region: ${AI_ALIYUN_REGION:cn-hangzhou}
+    endpoint: ${AI_ALIYUN_ENDPOINT:mt.cn-hangzhou.aliyuncs.com}
+
+minio:
+  endpoint: ${MINIO_ENDPOINT}
+  bucketName: ${MINIO_BUCKET_NAME:translation-prod}
+  secure: ${MINIO_SECURE:false}
+  accessKey: ${MINIO_ACCESS_KEY}
+  secretKey: ${MINIO_SECRET_KEY}
+
+app:
+  baseUrl: ${APP_BASE_URL}
+  mq:
+    enabled: ${APP_MQ_ENABLED:false}
+
+logging:
+  level:
+    cn.net.wanzni.ai.translation: INFO
+    org.springframework.ai: INFO
+    org.springframework.data.elasticsearch: WARN
+    org.hibernate.SQL: WARN
+    org.hibernate.type.descriptor.sql: WARN
+    org.hibernate.type.descriptor.jdbc: WARN
+    org.hibernate.orm.jdbc.bind: WARN
+    org.hibernate.stat: WARN
+  file:
+    name:
+
+rocketmq:
+  name-server: ${ROCKETMQ_NAME_SERVER:}
+  producer:
+    group: ${ROCKETMQ_PRODUCER_GROUP:translation-ai-agent-producer}
+
+pay:
+  alipay:
+    enabled: ${PAY_ALIPAY_ENABLED:false}
+    sandbox: ${PAY_ALIPAY_SANDBOX:true}
+    app-id: ${PAY_ALIPAY_APP_ID:}
+    merchant-private-key: ${PAY_ALIPAY_PRIVATE_KEY:}
+    alipay-public-key: ${PAY_ALIPAY_PUBLIC_KEY:}
+    notify-url: ${PAY_ALIPAY_NOTIFY_URL:${APP_BASE_URL}/api/payment/notify/alipay}
+  wechat:
+    enabled: ${PAY_WECHAT_ENABLED:false}
+    app-id: ${PAY_WECHAT_APP_ID:}
+    mchid: ${PAY_WECHAT_MCHID:}
+    merchant-serial-number: ${PAY_WECHAT_SERIAL_NO:}
+    api-v3-key: ${PAY_WECHAT_API_V3_KEY:}
+    private-key-path: ${PAY_WECHAT_PRIVATE_KEY_PATH:}
+    notify-url: ${PAY_WECHAT_NOTIFY_URL:${APP_BASE_URL}/api/payment/notify/wechat}

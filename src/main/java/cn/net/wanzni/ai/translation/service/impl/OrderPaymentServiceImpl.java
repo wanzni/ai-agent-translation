@@ -18,6 +18,7 @@ import cn.net.wanzni.ai.translation.enums.PaymentStatusEnum;
 import cn.net.wanzni.ai.translation.payment.PaymentChannelRegistry;
 import cn.net.wanzni.ai.translation.payment.PaymentQrPrepayResult;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -46,7 +47,7 @@ public class OrderPaymentServiceImpl implements OrderPaymentService {
     private final PaymentRecordRepository paymentRepository;
     private final MembershipService membershipService;
     private final PointsService pointsService;
-    private final OrderCancelProducer orderCancelProducer;
+    private final ObjectProvider<OrderCancelProducer> orderCancelProducerProvider;
     private final UserRepository userRepository;
     private final PaymentChannelRegistry channelRegistry;
     @Value("${app.membership.monthly-quota:5000}")
@@ -85,7 +86,10 @@ public class OrderPaymentServiceImpl implements OrderPaymentService {
         orderRepository.save(order);
         try {
             LocalDateTime expireAt = LocalDateTime.now().plusMinutes(30);
-            orderCancelProducer.sendCancel(order.getOrderNo(), expireAt);
+            OrderCancelProducer orderCancelProducer = orderCancelProducerProvider.getIfAvailable();
+            if (orderCancelProducer != null) {
+                orderCancelProducer.sendCancel(order.getOrderNo(), expireAt);
+            }
         } catch (Exception ignored) {}
 
         log.info("创建会员订单成功: orderNo={}, userId={}, 类型={}, 金额={}", orderNo, req.getUserId(), type, amount);

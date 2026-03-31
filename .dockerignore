@@ -1,0 +1,11 @@
+.git
+.idea
+.vs
+.vscode
+target
+logs
+README.assets
+heap_dump.hprof
+*.iml
+src/main/resources/application-dev-private.yml
+src/main/resources/application-local-backup.md
