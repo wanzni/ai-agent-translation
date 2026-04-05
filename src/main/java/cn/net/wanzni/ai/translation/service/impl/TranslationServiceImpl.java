@@ -248,8 +248,6 @@ public class TranslationServiceImpl implements TranslationService {
 
     /**
      * 检测给定文本的语言。
-     *
-     * @param text 待检测文本
      * @return 检测结果，包含语言代码和置信度
      * @throws Exception 检测过程中发生的异常
      */
