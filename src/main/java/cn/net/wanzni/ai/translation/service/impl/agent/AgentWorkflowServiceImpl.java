@@ -122,6 +122,7 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
         try {
             executePlanStep(task, translationRequest);
             RagContext ragContext = executeRetrieveStep(task, translationRequest);
+            executeFusionStep(task, translationRequest, ragContext);
             TranslationResponse translationResponse = executeTranslateStep(task, translationRequest, ragContext);
             RevisionExecution revisionExecution = executeRevisionLoop(task, translationRequest, translationResponse);
             syncLatestTranslationRecord(task.getId(), revisionExecution.finalText());
@@ -150,7 +151,7 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
                 "textLength", request.getCharacterCount()
         );
         Map<String, Object> output = new LinkedHashMap<>();
-        output.put("plan", List.of("PLAN", "RETRIEVE_TERMINOLOGY", "TRANSLATE", "QUALITY_CHECK", "REVISE(optional)", "FINALIZE"));
+        output.put("plan", List.of("PLAN", "RETRIEVE_TERMINOLOGY", "RETRIEVE_MEMORY", "FUSION", "TRANSLATE", "QUALITY_CHECK", "REVISE(optional)", "FINALIZE"));
         output.put("useRag", request.getUseRag());
         output.put("useTerminology", request.getUseTerminology());
         saveStep(task.getId(), AgentStepTypeEnum.PLAN, "Plan task", null, null, input, output, AgentStepStatusEnum.SUCCESS, 0L, null);
@@ -168,24 +169,55 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
             long fallbackHistoryCount = ragContext.getHistorySnippets() == null ? 0 : ragContext.getHistorySnippets().stream()
                     .filter(snippet -> "HISTORY".equalsIgnoreCase(snippet.getSourceType()))
                     .count();
-            Map<String, Object> output = new LinkedHashMap<>();
-            output.put("keywordCount", ragContext.getKeywords() == null ? 0 : ragContext.getKeywords().size());
-            output.put("glossaryHitCount", ragContext.getGlossaryMap() == null ? 0 : ragContext.getGlossaryMap().size());
-            output.put("historyHitCount", ragContext.getHistorySnippets() == null ? 0 : ragContext.getHistorySnippets().size());
-            output.put("tmHitCount", tmHistoryCount);
-            output.put("historyFallbackCount", fallbackHistoryCount);
-            output.put("buildTimeMs", ragContext.getBuildTimeMs());
-            saveStep(task.getId(), AgentStepTypeEnum.RETRIEVE_TERMINOLOGY, "Retrieve terminology and context",
-                    "rag_service", null, buildRequestInput(request), output, AgentStepStatusEnum.SUCCESS,
+            Map<String, Object> terminologyOutput = new LinkedHashMap<>();
+            terminologyOutput.put("keywordCount", ragContext.getKeywords() == null ? 0 : ragContext.getKeywords().size());
+            terminologyOutput.put("terminologyRetrievalTriggered", ragContext.getTerminologyRetrievalTriggered());
+            terminologyOutput.put("glossaryHitCount", ragContext.getGlossaryHitCount());
+            terminologyOutput.put("retrievalReasons", ragContext.getRetrievalReasons());
+            terminologyOutput.put("buildTimeMs", ragContext.getBuildTimeMs());
+            saveStep(task.getId(), AgentStepTypeEnum.RETRIEVE_TERMINOLOGY, "Retrieve terminology constraints",
+                    "rag_service", null, buildRequestInput(request), terminologyOutput, AgentStepStatusEnum.SUCCESS,
                     System.currentTimeMillis() - start, null);
-            updateCurrentStep(task.getId(), AgentStepTypeEnum.TRANSLATE.name());
+            updateCurrentStep(task.getId(), AgentStepTypeEnum.RETRIEVE_MEMORY.name());
+
+            Map<String, Object> memoryOutput = new LinkedHashMap<>();
+            memoryOutput.put("historyRetrievalTriggered", ragContext.getHistoryRetrievalTriggered());
+            memoryOutput.put("historyHitCount", ragContext.getHistoryHitCount());
+            memoryOutput.put("tmHitCount", tmHistoryCount);
+            memoryOutput.put("historyFallbackCount", fallbackHistoryCount);
+            memoryOutput.put("retrievalReasons", ragContext.getRetrievalReasons());
+            memoryOutput.put("buildTimeMs", ragContext.getBuildTimeMs());
+            saveStep(task.getId(), AgentStepTypeEnum.RETRIEVE_MEMORY, "Retrieve translation memory",
+                    "rag_service", null, buildRequestInput(request), memoryOutput, AgentStepStatusEnum.SUCCESS,
+                    System.currentTimeMillis() - start, null);
+            updateCurrentStep(task.getId(), AgentStepTypeEnum.FUSION.name());
             return ragContext;
         } catch (Exception e) {
             saveStep(task.getId(), AgentStepTypeEnum.RETRIEVE_TERMINOLOGY, "Retrieve terminology and context",
                     "rag_service", null, buildRequestInput(request), Map.of("warning", "RAG retrieval failed"),
                     AgentStepStatusEnum.FAILED, System.currentTimeMillis() - start, e.getMessage());
+            saveStep(task.getId(), AgentStepTypeEnum.RETRIEVE_MEMORY, "Retrieve translation memory",
+                    "rag_service", null, buildRequestInput(request), Map.of("warning", "RAG retrieval failed"),
+                    AgentStepStatusEnum.FAILED, System.currentTimeMillis() - start, e.getMessage());
             throw e;
         }
+    }
+
+    private void executeFusionStep(AgentTask task, TranslationRequest request, RagContext ragContext) {
+        long start = System.currentTimeMillis();
+        Map<String, Object> output = new LinkedHashMap<>();
+        output.put("retrievalTriggered", ragContext != null && Boolean.TRUE.equals(ragContext.getRetrievalTriggered()));
+        output.put("selectedContextCount", ragContext == null || ragContext.getContextSnippets() == null
+                ? 0 : ragContext.getContextSnippets().size());
+        output.put("glossaryHitCount", ragContext == null ? 0 : ragContext.getGlossaryHitCount());
+        output.put("historyHitCount", ragContext == null ? 0 : ragContext.getHistoryHitCount());
+        output.put("retrievalReasons", ragContext == null ? List.of() : ragContext.getRetrievalReasons());
+        output.put("buildTimeMs", ragContext == null ? 0 : ragContext.getBuildTimeMs());
+
+        saveStep(task.getId(), AgentStepTypeEnum.FUSION, "Fuse retrieval results into prompt context",
+                "rag_fusion", null, buildRequestInput(request), output, AgentStepStatusEnum.SUCCESS,
+                System.currentTimeMillis() - start, null);
+        updateCurrentStep(task.getId(), AgentStepTypeEnum.TRANSLATE.name());
     }
 
     private TranslationResponse executeTranslateStep(AgentTask task, TranslationRequest request, RagContext ragContext) throws Exception {
@@ -577,6 +609,16 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
         payload.put("contextSnippets", ragContext.getContextSnippets());
         payload.put("glossaryMap", ragContext.getGlossaryMap());
         payload.put("historySnippets", ragContext.getHistorySnippets());
+        payload.put("keywords", ragContext.getKeywords());
+        payload.put("topK", ragContext.getTopK());
+        payload.put("buildTimeMs", ragContext.getBuildTimeMs());
+        payload.put("preprocessedSourceText", ragContext.getPreprocessedSourceText());
+        payload.put("retrievalTriggered", ragContext.getRetrievalTriggered());
+        payload.put("terminologyRetrievalTriggered", ragContext.getTerminologyRetrievalTriggered());
+        payload.put("historyRetrievalTriggered", ragContext.getHistoryRetrievalTriggered());
+        payload.put("retrievalReasons", ragContext.getRetrievalReasons());
+        payload.put("glossaryHitCount", ragContext.getGlossaryHitCount());
+        payload.put("historyHitCount", ragContext.getHistoryHitCount());
         return payload;
     }
 

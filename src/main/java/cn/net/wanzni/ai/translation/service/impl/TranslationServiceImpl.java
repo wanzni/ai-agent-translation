@@ -173,16 +173,13 @@ public class TranslationServiceImpl implements TranslationService {
                 if (Boolean.TRUE.equals(request.getUseRag()) || Boolean.TRUE.equals(request.getUseTerminology())) {
                     try {
                         // 使用结构化实体构建上下文，再转换为 Map 以兼容现有 DTO 字段
-                        RagContext rag = ragService.buildRagContext(request);
-                        Map<String, Object> ragCtx = new java.util.LinkedHashMap<>();
-                        ragCtx.put("glossaryMap", rag.getGlossaryMap());
-                        ragCtx.put("historySnippets", rag.getHistorySnippets());
-                        ragCtx.put("contextSnippets", rag.getContextSnippets());
-                        ragCtx.put("keywords", rag.getKeywords());
-                        ragCtx.put("topK", rag.getTopK());
-                        ragCtx.put("buildTimeMs", rag.getBuildTimeMs());
-                        ragCtx.put("preprocessedSourceText", rag.getPreprocessedSourceText());
-                        request.setRagContext(ragCtx);
+                        if (hasUsableRagContext(request.getRagContext())) {
+                            log.debug("Reuse prebuilt RAG context for request: source={} target={}",
+                                    request.getSourceLanguage(), request.getTargetLanguage());
+                        } else {
+                            RagContext rag = ragService.buildRagContext(request);
+                            request.setRagContext(buildRagPayload(rag));
+                        }
                     } catch (Exception e) {
                         log.warn("构建RAG上下文失败，继续进行翻译: {}", e.getMessage());
                     }
@@ -256,6 +253,34 @@ public class TranslationServiceImpl implements TranslationService {
      * @return 检测结果，包含语言代码和置信度
      * @throws Exception 检测过程中发生的异常
      */
+    private boolean hasUsableRagContext(Map<String, Object> ragContext) {
+        if (ragContext == null || ragContext.isEmpty()) {
+            return false;
+        }
+        return ragContext.containsKey("glossaryMap")
+                || ragContext.containsKey("historySnippets")
+                || ragContext.containsKey("contextSnippets")
+                || ragContext.containsKey("preprocessedSourceText");
+    }
+
+    private Map<String, Object> buildRagPayload(RagContext rag) {
+        Map<String, Object> ragCtx = new LinkedHashMap<>();
+        ragCtx.put("glossaryMap", rag.getGlossaryMap());
+        ragCtx.put("historySnippets", rag.getHistorySnippets());
+        ragCtx.put("contextSnippets", rag.getContextSnippets());
+        ragCtx.put("keywords", rag.getKeywords());
+        ragCtx.put("topK", rag.getTopK());
+        ragCtx.put("buildTimeMs", rag.getBuildTimeMs());
+        ragCtx.put("preprocessedSourceText", rag.getPreprocessedSourceText());
+        ragCtx.put("retrievalTriggered", rag.getRetrievalTriggered());
+        ragCtx.put("terminologyRetrievalTriggered", rag.getTerminologyRetrievalTriggered());
+        ragCtx.put("historyRetrievalTriggered", rag.getHistoryRetrievalTriggered());
+        ragCtx.put("retrievalReasons", rag.getRetrievalReasons());
+        ragCtx.put("glossaryHitCount", rag.getGlossaryHitCount());
+        ragCtx.put("historyHitCount", rag.getHistoryHitCount());
+        return ragCtx;
+    }
+
     @Override
     @Cacheable(value = "languageDetection", key = "#text.hashCode()")
     public LanguageDetectionResponse detectLanguage(String text) throws Exception {
@@ -953,6 +978,147 @@ public class TranslationServiceImpl implements TranslationService {
             new ThreadPoolExecutor.CallerRunsPolicy()
     );
 
+    private static final int PARALLEL_BATCH_CHUNK_SIZE = 16;
+    private static final int PARALLEL_BATCH_TIMEOUT_MIN_SECONDS = 45;
+    private static final int PARALLEL_BATCH_TIMEOUT_BASE_SECONDS = 8;
+    private static final int PARALLEL_BATCH_TIMEOUT_PER_REQUEST_SECONDS = 4;
+
+    @Override
+    public List<TranslationResponse> parallelBatchTranslate(List<TranslationRequest> requests) throws Exception {
+        if (requests == null || requests.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        int chunkSize = getParallelBatchChunkSize();
+        int totalChunks = (requests.size() + chunkSize - 1) / chunkSize;
+        int compensatedCount = 0;
+        int errorCount = 0;
+        long startTime = System.currentTimeMillis();
+
+        log.info("寮€濮嬬ǔ瀹氬苟琛屾壒閲忕炕璇戯紝鏁伴噺: {}, 鍒嗘壒澶у皬: {}, 鎵规鏁: {}",
+                requests.size(), chunkSize, totalChunks);
+
+        List<TranslationResponse> responses = new ArrayList<>(Collections.nCopies(requests.size(), null));
+        for (int chunkStart = 0, chunkIndex = 1; chunkStart < requests.size(); chunkStart += chunkSize, chunkIndex++) {
+            int chunkEnd = Math.min(requests.size(), chunkStart + chunkSize);
+            List<TranslationRequest> chunkRequests = requests.subList(chunkStart, chunkEnd);
+            long timeoutMillis = getParallelBatchTimeoutMillis(chunkRequests.size());
+            long chunkStartTime = System.currentTimeMillis();
+
+            log.info("骞惰缈昏瘧鎵规寮€濮? {}/{}, 鏁伴噺: {}, 瓒呮椂: {}ms",
+                    chunkIndex, totalChunks, chunkRequests.size(), timeoutMillis);
+
+            List<CompletableFuture<TranslationResponse>> futures = new ArrayList<>(chunkRequests.size());
+            for (TranslationRequest request : chunkRequests) {
+                futures.add(CompletableFuture.supplyAsync(
+                        () -> safeTranslateInParallel(request),
+                        getParallelTranslateExecutor()
+                ));
+            }
+
+            long deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+            boolean[] needsCompensation = new boolean[chunkRequests.size()];
+            int chunkCompensated = 0;
+
+            for (int offset = 0; offset < futures.size(); offset++) {
+                CompletableFuture<TranslationResponse> future = futures.get(offset);
+                int responseIndex = chunkStart + offset;
+                try {
+                    long remainingNanos = deadlineNanos - System.nanoTime();
+                    if (remainingNanos <= 0) {
+                        needsCompensation[offset] = true;
+                        continue;
+                    }
+                    long waitMillis = Math.max(1L, TimeUnit.NANOSECONDS.toMillis(remainingNanos));
+                    TranslationResponse response = future.get(waitMillis, TimeUnit.MILLISECONDS);
+                    if (shouldCompensateResponse(response)) {
+                        needsCompensation[offset] = true;
+                    } else {
+                        responses.set(responseIndex, response);
+                    }
+                } catch (TimeoutException ex) {
+                    needsCompensation[offset] = true;
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                    needsCompensation[offset] = true;
+                } catch (ExecutionException | CancellationException ex) {
+                    needsCompensation[offset] = true;
+                }
+            }
+
+            for (int offset = 0; offset < needsCompensation.length; offset++) {
+                if (!needsCompensation[offset]) {
+                    continue;
+                }
+                futures.get(offset).cancel(true);
+                responses.set(chunkStart + offset, safeTranslateInParallel(chunkRequests.get(offset)));
+                chunkCompensated++;
+            }
+
+            compensatedCount += chunkCompensated;
+            for (int i = chunkStart; i < chunkEnd; i++) {
+                if (isErrorResponse(responses.get(i))) {
+                    errorCount++;
+                }
+            }
+
+            long chunkDuration = System.currentTimeMillis() - chunkStartTime;
+            log.info("骞惰缈昏瘧鎵规瀹屾垚: {}/{}, 鑰楁椂: {}ms, 琛ュ伩鏁伴噺: {}",
+                    chunkIndex, totalChunks, chunkDuration, chunkCompensated);
+        }
+
+        long duration = System.currentTimeMillis() - startTime;
+        log.info("绋冲仴骞惰鎵归噺缈昏瘧瀹屾垚锛屾暟閲? {}, 鎵规鏁: {}, 琛ュ伩鏁伴噺: {}, 閿欒鏁伴噺: {}, 鑰楁椂: {}ms",
+                requests.size(), totalChunks, compensatedCount, errorCount, duration);
+
+        return responses;
+    }
+
+    protected int getParallelBatchChunkSize() {
+        return PARALLEL_BATCH_CHUNK_SIZE;
+    }
+
+    protected long getParallelBatchTimeoutMillis(int chunkRequestCount) {
+        long timeoutSeconds = Math.max(
+                PARALLEL_BATCH_TIMEOUT_MIN_SECONDS,
+                PARALLEL_BATCH_TIMEOUT_BASE_SECONDS + (long) chunkRequestCount * PARALLEL_BATCH_TIMEOUT_PER_REQUEST_SECONDS
+        );
+        return TimeUnit.SECONDS.toMillis(timeoutSeconds);
+    }
+
+    protected Executor getParallelTranslateExecutor() {
+        return parallelTranslateExecutor;
+    }
+
+    private TranslationResponse safeTranslateInParallel(TranslationRequest request) {
+        try {
+            return translate(request);
+        } catch (Exception e) {
+            log.error("骞惰缈昏瘧鍗曚釜璇锋眰澶辫触: {}", e.getMessage());
+            return TranslationResponse.builder()
+                    .sourceText(request.getSourceText())
+                    .sourceLanguage(request.getSourceLanguage())
+                    .targetLanguage(request.getTargetLanguage())
+                    .status("ERROR")
+                    .errorMessage(e.getMessage())
+                    .build();
+        }
+    }
+
+    private boolean shouldCompensateResponse(TranslationResponse response) {
+        return response == null
+                || response.getTranslatedText() == null
+                || response.getTranslatedText().isBlank()
+                || "ERROR".equalsIgnoreCase(response.getStatus());
+    }
+
+    private boolean isErrorResponse(TranslationResponse response) {
+        return response == null
+                || "ERROR".equalsIgnoreCase(response.getStatus())
+                || response.getTranslatedText() == null
+                || response.getTranslatedText().isBlank();
+    }
+
     /**
      * 并行批量翻译：利用多线程并行翻译多个段落，突破大模型Token限制
      * 
@@ -970,7 +1136,7 @@ public class TranslationServiceImpl implements TranslationService {
      * @throws Exception 翻译过程中发生的异常
      */
 
-    public List<TranslationResponse> parallelBatchTranslate(List<TranslationRequest> requests) throws Exception {
+    private List<TranslationResponse> parallelBatchTranslateLegacy(List<TranslationRequest> requests) throws Exception {
         if (requests == null || requests.isEmpty()) {
             return Collections.emptyList();
         }

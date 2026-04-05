@@ -53,6 +53,18 @@ public class RagContext {
      */
     private Long buildTimeMs;
 
+    private Boolean retrievalTriggered;
+
+    private Boolean terminologyRetrievalTriggered;
+
+    private Boolean historyRetrievalTriggered;
+
+    private List<String> retrievalReasons;
+
+    private Integer glossaryHitCount;
+
+    private Integer historyHitCount;
+
     /**
      * 预处理后的源文本（已应用术语前置约束的标记），用于在调用大模型前
      * 将术语目标译名嵌入源文本中，避免事后替换导致的偏差。

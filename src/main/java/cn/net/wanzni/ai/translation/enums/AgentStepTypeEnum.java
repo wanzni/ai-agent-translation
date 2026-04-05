@@ -11,6 +11,7 @@ public enum AgentStepTypeEnum {
     PLAN("Task planning"),
     RETRIEVE_TERMINOLOGY("Retrieve terminology"),
     RETRIEVE_MEMORY("Retrieve translation memory"),
+    FUSION("Fuse retrieval results"),
     TRANSLATE("Translate"),
     QUALITY_CHECK("Quality check"),
     REVISE("Revise translation"),

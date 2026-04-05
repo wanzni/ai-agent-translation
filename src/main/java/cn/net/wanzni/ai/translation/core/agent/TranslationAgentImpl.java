@@ -64,6 +64,7 @@ public class TranslationAgentImpl implements TranslationAgent {
 
         try {
             RagContext ragContext = ragService.buildRagContext(request);
+            request.setRagContext(toRagPayload(ragContext));
             String ragContextStr = buildRagContextString(ragContext);
 
             String userPrompt = buildUserPrompt(request, ragContextStr);
@@ -81,7 +82,7 @@ public class TranslationAgentImpl implements TranslationAgent {
                 toolCalls.add(new ToolCall(action, params, observation));
 
                 if ("terminology_search".equals(action) && toolResult.success()) {
-                    request.setRagContext(Map.of("terminology", observation));
+                    mergeToolObservation(request, "terminologySearchObservation", observation);
                 }
             }
 
@@ -109,6 +110,35 @@ public class TranslationAgentImpl implements TranslationAgent {
         log.info("==========================================");
 
         return new AgentResponse(thought, action, observation, finalResponse, toolCalls, duration);
+    }
+
+    private Map<String, Object> toRagPayload(RagContext ragContext) {
+        if (ragContext == null) {
+            return Map.of();
+        }
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("glossaryMap", ragContext.getGlossaryMap());
+        payload.put("historySnippets", ragContext.getHistorySnippets());
+        payload.put("contextSnippets", ragContext.getContextSnippets());
+        payload.put("keywords", ragContext.getKeywords());
+        payload.put("topK", ragContext.getTopK());
+        payload.put("buildTimeMs", ragContext.getBuildTimeMs());
+        payload.put("preprocessedSourceText", ragContext.getPreprocessedSourceText());
+        payload.put("retrievalTriggered", ragContext.getRetrievalTriggered());
+        payload.put("terminologyRetrievalTriggered", ragContext.getTerminologyRetrievalTriggered());
+        payload.put("historyRetrievalTriggered", ragContext.getHistoryRetrievalTriggered());
+        payload.put("retrievalReasons", ragContext.getRetrievalReasons());
+        payload.put("glossaryHitCount", ragContext.getGlossaryHitCount());
+        payload.put("historyHitCount", ragContext.getHistoryHitCount());
+        return payload;
+    }
+
+    private void mergeToolObservation(TranslationRequest request, String key, String observation) {
+        Map<String, Object> existing = request.getRagContext() == null
+                ? new HashMap<>()
+                : new HashMap<>(request.getRagContext());
+        existing.put(key, observation);
+        request.setRagContext(existing);
     }
 
     private String buildRagContextString(RagContext ragContext) {

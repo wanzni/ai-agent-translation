@@ -53,9 +53,25 @@ public class RagService {
     public RagContext buildRagContext(TranslationRequest request) throws Exception {
         long start = System.currentTimeMillis();
         try {
+            boolean useTerminology = Boolean.TRUE.equals(request.getUseTerminology());
+            boolean useHistory = Boolean.TRUE.equals(request.getUseRag());
+            List<String> retrievalReasons = new ArrayList<>();
+            if (useTerminology) {
+                retrievalReasons.add("TERMINOLOGY_ENABLED");
+            }
+            if (useHistory) {
+                retrievalReasons.add("TRANSLATION_MEMORY_ENABLED");
+            }
+            if (StringUtils.hasText(request.getDomain())) {
+                retrievalReasons.add("DOMAIN_FILTER=" + request.getDomain());
+            }
             // 提取关键词（简单分词，可替换为更强的分词器）
             List<String> tokens = extractKeywords(request.getSourceText());
             int topK = Optional.ofNullable(request.getRagTopK()).orElse(5);
+            RetrievalPlan retrievalPlan = decideRetrievalPlan(request, tokens);
+            useTerminology = retrievalPlan.retrieveTerminology();
+            useHistory = retrievalPlan.retrieveHistory();
+            retrievalReasons = new ArrayList<>(retrievalPlan.reasons());
 
             // 术语检索（中文等无空格场景增加回退：按源文本包含匹配）
             String normSrcLang = normalizeLanguage(request.getSourceLanguage(), request.getSourceText());
@@ -67,6 +83,12 @@ public class RagService {
                     request.getDomain(),
                     request.getSourceText()
             );
+            if (!useTerminology) {
+                glossaryMap = new LinkedHashMap<>();
+            }
+            if (!glossaryMap.isEmpty()) {
+                retrievalReasons.add("GLOSSARY_HIT");
+            }
 
             // 历史检索（优先用户维度，其次全局维度）
             List<RagContext.HistorySnippet> historySnippets = searchHistorySnippets(
@@ -76,6 +98,12 @@ public class RagService {
                     request.getDomain(),
                     topK
             );
+            if (!useHistory) {
+                historySnippets = new ArrayList<>();
+            }
+            if (!historySnippets.isEmpty()) {
+                retrievalReasons.add("HISTORY_HIT");
+            }
 
             // 组装上下文片段：术语说明 + 历史示例
             List<String> contextSnippets = new ArrayList<>();
@@ -93,7 +121,7 @@ public class RagService {
             }
 
             // 使用 Spring AI Embedding 做相似度排序（若可用），仅保留 TopK 片段
-            List<String> rankedSnippets = rankByEmbedding(request.getSourceText(), contextSnippets, topK);
+            List<String> rankedSnippets = fuseContextSnippets(request.getSourceText(), contextSnippets, topK);
             // 基于术语映射对源文本进行前置处理，生成预处理文本
             String preprocessed = preprocessSourceWithGlossary(request.getSourceText(), glossaryMap);
 
@@ -104,12 +132,72 @@ public class RagService {
                     .keywords(tokens)
                     .topK(topK)
                     .buildTimeMs(System.currentTimeMillis() - start)
+                    .retrievalTriggered(useTerminology || useHistory)
+                    .terminologyRetrievalTriggered(useTerminology)
+                    .historyRetrievalTriggered(useHistory)
+                    .retrievalReasons(retrievalReasons)
+                    .glossaryHitCount(glossaryMap.size())
+                    .historyHitCount(historySnippets.size())
                     .preprocessedSourceText(preprocessed)
                     .build();
         } catch (Exception e) {
             log.error("构建RAG上下文失败: {}", e.getMessage(), e);
             throw e;
         }
+    }
+
+    private RetrievalPlan decideRetrievalPlan(TranslationRequest request, List<String> tokens) {
+        boolean terminologyEnabled = Boolean.TRUE.equals(request.getUseTerminology());
+        boolean ragEnabled = Boolean.TRUE.equals(request.getUseRag());
+        String sourceText = request.getSourceText();
+        int textLength = sourceText == null ? 0 : sourceText.trim().length();
+        boolean hasDomain = StringUtils.hasText(request.getDomain());
+        boolean hasEnoughTokens = tokens != null && !tokens.isEmpty();
+        boolean genericShortText = !hasDomain && textLength > 0 && textLength <= 12 && (tokens == null || tokens.size() <= 2);
+
+        List<String> reasons = new ArrayList<>();
+        if (terminologyEnabled) {
+            reasons.add("TERMINOLOGY_FEATURE_ENABLED");
+        } else {
+            reasons.add("TERMINOLOGY_DISABLED");
+        }
+        if (ragEnabled) {
+            reasons.add("RAG_FEATURE_ENABLED");
+        } else {
+            reasons.add("RAG_DISABLED");
+        }
+        if (hasDomain) {
+            reasons.add("DOMAIN_PRESENT");
+        }
+        if (hasEnoughTokens) {
+            reasons.add("KEYWORDS_EXTRACTED");
+        }
+
+        boolean retrieveTerminology = terminologyEnabled && (hasEnoughTokens || hasDomain);
+        if (!retrieveTerminology && terminologyEnabled) {
+            reasons.add("SKIP_TERMINOLOGY_NO_KEYWORD");
+        }
+
+        boolean retrieveHistory = ragEnabled && !genericShortText;
+        if (retrieveHistory) {
+            reasons.add("ENABLE_HISTORY_RETRIEVAL");
+        } else if (ragEnabled) {
+            reasons.add("SKIP_HISTORY_SHORT_GENERIC_TEXT");
+        }
+
+        return new RetrievalPlan(retrieveTerminology || retrieveHistory, retrieveTerminology, retrieveHistory, List.copyOf(reasons));
+    }
+
+    private List<String> fuseContextSnippets(String sourceText, List<String> contextSnippets, int topK) {
+        if (contextSnippets == null || contextSnippets.isEmpty()) {
+            return List.of();
+        }
+        List<String> deduplicated = contextSnippets.stream()
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .distinct()
+                .collect(Collectors.toCollection(ArrayList::new));
+        return rankByEmbedding(sourceText, deduplicated, topK);
     }
 
     /**
@@ -514,5 +602,13 @@ public class RagService {
         }
         double denom = Math.sqrt(na) * Math.sqrt(nb);
         return denom == 0.0d ? 0.0d : (dot / denom);
+    }
+
+    private record RetrievalPlan(
+            boolean retrievalTriggered,
+            boolean retrieveTerminology,
+            boolean retrieveHistory,
+            List<String> reasons
+    ) {
     }
 }
