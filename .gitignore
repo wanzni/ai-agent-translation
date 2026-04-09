@@ -15,3 +15,5 @@ application-dev.yml
 application.yml
 src/main/resources/application-dev-private.yml
 src/main/resources/application-local-backup.md
+eval/results/
+__pycache__/

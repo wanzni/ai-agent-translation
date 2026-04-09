@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "cross-border-ecom-eval-rule-registry/v1",
+  "criticalRules": [
+    {
+      "ruleId": "brand_mistranslation",
+      "description": "Brand name is changed, omitted or mistranslated."
+    },
+    {
+      "ruleId": "high_severity_term_missing",
+      "description": "Any required high severity term is not matched."
+    },
+    {
+      "ruleId": "number_unit_error",
+      "description": "Any high severity number or unit is not preserved."
+    },
+    {
+      "ruleId": "placeholder_corruption",
+      "description": "Protected placeholder token is missing or corrupted."
+    },
+    {
+      "ruleId": "size_confusion",
+      "description": "Size token such as S/M/L/XL is missing or replaced."
+    },
+    {
+      "ruleId": "policy_misrepresentation",
+      "description": "Refund, shipping or after-sales policy is mistranslated."
+    },
+    {
+      "ruleId": "sentiment_reversal",
+      "description": "Review sentiment is reversed compared with the reference."
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "cross-border-ecom-eval-scoring/v1",
+  "categories": {
+    "product_title": {
+      "termAccuracy": 0.5,
+      "numberAccuracy": 0.2,
+      "protectedTokenRetention": 0.2,
+      "criticalFailurePenalty": 0.1
+    },
+    "product_description": {
+      "termAccuracy": 0.4,
+      "numberAccuracy": 0.25,
+      "protectedTokenRetention": 0.2,
+      "criticalFailurePenalty": 0.15
+    },
+    "customer_review": {
+      "termAccuracy": 0.3,
+      "numberAccuracy": 0.1,
+      "protectedTokenRetention": 0.1,
+      "criticalFailurePenalty": 0.5
+    },
+    "customer_service_chat": {
+      "termAccuracy": 0.35,
+      "numberAccuracy": 0.15,
+      "protectedTokenRetention": 0.15,
+      "criticalFailurePenalty": 0.35
+    }
+  }
+}

@@ -209,10 +209,13 @@ public class AgentWorkflowServiceImpl implements AgentWorkflowService {
         output.put("retrievalTriggered", ragContext != null && Boolean.TRUE.equals(ragContext.getRetrievalTriggered()));
         output.put("selectedContextCount", ragContext == null || ragContext.getContextSnippets() == null
                 ? 0 : ragContext.getContextSnippets().size());
-        output.put("glossaryHitCount", ragContext == null ? 0 : ragContext.getGlossaryHitCount());
-        output.put("historyHitCount", ragContext == null ? 0 : ragContext.getHistoryHitCount());
+        output.put("glossaryHitCount", ragContext == null || ragContext.getGlossaryHitCount() == null
+                ? 0 : ragContext.getGlossaryHitCount());
+        output.put("historyHitCount", ragContext == null || ragContext.getHistoryHitCount() == null
+                ? 0 : ragContext.getHistoryHitCount());
         output.put("retrievalReasons", ragContext == null ? List.of() : ragContext.getRetrievalReasons());
-        output.put("buildTimeMs", ragContext == null ? 0 : ragContext.getBuildTimeMs());
+        output.put("buildTimeMs", ragContext == null || ragContext.getBuildTimeMs() == null
+                ? 0L : ragContext.getBuildTimeMs());
 
         saveStep(task.getId(), AgentStepTypeEnum.FUSION, "Fuse retrieval results into prompt context",
                 "rag_fusion", null, buildRequestInput(request), output, AgentStepStatusEnum.SUCCESS,

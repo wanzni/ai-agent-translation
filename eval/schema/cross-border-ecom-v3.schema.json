@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cross-border-ecom-eval/v3",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "caseId",
+    "sourceDataset",
+    "split",
+    "domain",
+    "category",
+    "difficulty",
+    "sourceLanguage",
+    "targetLanguage",
+    "sourceText",
+    "referenceText",
+    "evaluationRules",
+    "expectedTerms",
+    "expectedNumbersOrUnits",
+    "expectedProtectedTokens",
+    "criticalFailureRuleIds",
+    "tags",
+    "annotationMetadata"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "cross-border-ecom-eval/v3"
+    },
+    "caseId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceDataset": {
+      "type": "string",
+      "minLength": 1
+    },
+    "split": {
+      "type": "string",
+      "enum": ["eval"]
+    },
+    "domain": {
+      "type": "string",
+      "const": "cross_border_ecommerce"
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "product_title",
+        "product_description",
+        "customer_review",
+        "customer_service_chat"
+      ]
+    },
+    "difficulty": {
+      "type": "string",
+      "enum": ["easy", "medium", "hard"]
+    }
+  }
+}

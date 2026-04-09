@@ -9,7 +9,6 @@ import cn.net.wanzni.ai.translation.repository.TerminologyEntryRepository;
 import cn.net.wanzni.ai.translation.repository.TranslationRecordRepository;
 import cn.net.wanzni.ai.translation.service.TranslationMemoryService;
 import com.huaban.analysis.jieba.JiebaSegmenter;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.ai.embedding.EmbeddingModel;
@@ -28,7 +27,6 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class RagService {
 
     private static final int HISTORY_CANDIDATE_FETCH_SIZE = 30;
@@ -40,11 +38,25 @@ public class RagService {
      * 可选获取 EmbeddingModel 的 Provider；如未配置，将回退至关键词检索。
      */
     private final ObjectProvider<EmbeddingModel> embeddingModelProvider;
+    private final RagRetrievalDecisionPolicy retrievalDecisionPolicy;
+    private final RagFusionSupport fusionSupport;
 
     /**
      * jieba中文分词器（线程安全，可复用）
      */
     private final JiebaSegmenter jiebaSegmenter = new JiebaSegmenter();
+
+    public RagService(TerminologyEntryRepository terminologyEntryRepository,
+                      TranslationMemoryService translationMemoryService,
+                      TranslationRecordRepository translationRecordRepository,
+                      ObjectProvider<EmbeddingModel> embeddingModelProvider) {
+        this.terminologyEntryRepository = terminologyEntryRepository;
+        this.translationMemoryService = translationMemoryService;
+        this.translationRecordRepository = translationRecordRepository;
+        this.embeddingModelProvider = embeddingModelProvider;
+        this.retrievalDecisionPolicy = new RagRetrievalDecisionPolicy();
+        this.fusionSupport = new RagFusionSupport(embeddingModelProvider);
+    }
 
     /**
      * 基于请求参数构建结构化 RAG 上下文。
@@ -68,7 +80,7 @@ public class RagService {
             // 提取关键词（简单分词，可替换为更强的分词器）
             List<String> tokens = extractKeywords(request.getSourceText());
             int topK = Optional.ofNullable(request.getRagTopK()).orElse(5);
-            RetrievalPlan retrievalPlan = decideRetrievalPlan(request, tokens);
+            RagRetrievalPlan retrievalPlan = retrievalDecisionPolicy.decide(request, tokens);
             useTerminology = retrievalPlan.retrieveTerminology();
             useHistory = retrievalPlan.retrieveHistory();
             retrievalReasons = new ArrayList<>(retrievalPlan.reasons());
@@ -121,7 +133,7 @@ public class RagService {
             }
 
             // 使用 Spring AI Embedding 做相似度排序（若可用），仅保留 TopK 片段
-            List<String> rankedSnippets = fuseContextSnippets(request.getSourceText(), contextSnippets, topK);
+            List<String> rankedSnippets = fusionSupport.fuse(request.getSourceText(), contextSnippets, topK);
             // 基于术语映射对源文本进行前置处理，生成预处理文本
             String preprocessed = preprocessSourceWithGlossary(request.getSourceText(), glossaryMap);
 
@@ -144,60 +156,6 @@ public class RagService {
             log.error("构建RAG上下文失败: {}", e.getMessage(), e);
             throw e;
         }
-    }
-
-    private RetrievalPlan decideRetrievalPlan(TranslationRequest request, List<String> tokens) {
-        boolean terminologyEnabled = Boolean.TRUE.equals(request.getUseTerminology());
-        boolean ragEnabled = Boolean.TRUE.equals(request.getUseRag());
-        String sourceText = request.getSourceText();
-        int textLength = sourceText == null ? 0 : sourceText.trim().length();
-        boolean hasDomain = StringUtils.hasText(request.getDomain());
-        boolean hasEnoughTokens = tokens != null && !tokens.isEmpty();
-        boolean genericShortText = !hasDomain && textLength > 0 && textLength <= 12 && (tokens == null || tokens.size() <= 2);
-
-        List<String> reasons = new ArrayList<>();
-        if (terminologyEnabled) {
-            reasons.add("TERMINOLOGY_FEATURE_ENABLED");
-        } else {
-            reasons.add("TERMINOLOGY_DISABLED");
-        }
-        if (ragEnabled) {
-            reasons.add("RAG_FEATURE_ENABLED");
-        } else {
-            reasons.add("RAG_DISABLED");
-        }
-        if (hasDomain) {
-            reasons.add("DOMAIN_PRESENT");
-        }
-        if (hasEnoughTokens) {
-            reasons.add("KEYWORDS_EXTRACTED");
-        }
-
-        boolean retrieveTerminology = terminologyEnabled && (hasEnoughTokens || hasDomain);
-        if (!retrieveTerminology && terminologyEnabled) {
-            reasons.add("SKIP_TERMINOLOGY_NO_KEYWORD");
-        }
-
-        boolean retrieveHistory = ragEnabled && !genericShortText;
-        if (retrieveHistory) {
-            reasons.add("ENABLE_HISTORY_RETRIEVAL");
-        } else if (ragEnabled) {
-            reasons.add("SKIP_HISTORY_SHORT_GENERIC_TEXT");
-        }
-
-        return new RetrievalPlan(retrieveTerminology || retrieveHistory, retrieveTerminology, retrieveHistory, List.copyOf(reasons));
-    }
-
-    private List<String> fuseContextSnippets(String sourceText, List<String> contextSnippets, int topK) {
-        if (contextSnippets == null || contextSnippets.isEmpty()) {
-            return List.of();
-        }
-        List<String> deduplicated = contextSnippets.stream()
-                .filter(StringUtils::hasText)
-                .map(String::trim)
-                .distinct()
-                .collect(Collectors.toCollection(ArrayList::new));
-        return rankByEmbedding(sourceText, deduplicated, topK);
     }
 
     /**
