@@ -1,41 +1,41 @@
-sourceTerm,targetTerm,sourceLanguage,targetLanguage,category,domain,definition,context
-20W PD快充,20W PD fast charging,zh,en,TECHNOLOGY,cross_border_ecommerce,充电器和移动电源的高频规格术语。,"常见于充电器、移动电源、数据线页面"
-20W??,20W fast charging,zh,en,TECHNOLOGY,cross_border_ecommerce,????????????????,"??????????????????"
-304不锈钢,304 stainless steel,zh,en,BUSINESS,cross_border_ecommerce,厨房与家居品类常见材质术语。,"常见于水杯、保温杯、餐具、厨具"
-50米防水,50m water resistance,zh,en,TECHNOLOGY,cross_border_ecommerce,穿戴设备常见防水规格。,"用于手表、手环等规格参数"
-??,noise-cancelling,zh,en,TECHNOLOGY,cross_border_ecommerce,???????????????,"????????????????"
-??,sun protection,zh,en,BUSINESS,cross_border_ecommerce,?????????????,"?????????????????????"
-????,instant cooling,zh,en,BUSINESS,cross_border_ecommerce,????????????????,"??????????????????"
-????,versatile storage,zh,en,BUSINESS,cross_border_ecommerce,?????????????,"???????????????????"
-AMOLED,AMOLED,zh,en,TECHNOLOGY,cross_border_ecommerce,屏幕显示技术缩写，通常保留原文。,"常见于智能手表、手机、显示设备"
-BPA-Free,BPA-free,zh,en,BUSINESS,cross_border_ecommerce,安全材质标签，通常保留大写缩写。,"常见于母婴、饮水、食品容器类商品"
-GPS,GPS,zh,en,TECHNOLOGY,cross_border_ecommerce,全球定位系统缩写，通常保留原文。,"常见于智能手表、导航设备、车载产品"
-UPF50+,UPF 50+,zh,en,BUSINESS,cross_border_ecommerce,防晒服饰常见等级标识。,"常见于防晒衣、帽子、户外服饰与配件"
-USB-C接口,USB-C port,zh,en,TECHNOLOGY,cross_border_ecommerce,接口与连接标准术语。,"常见于充电器、扩展坞、显示器和移动设备配件"
-主动降噪,active noise cancelling,zh,en,TECHNOLOGY,cross_border_ecommerce,音频设备常见核心卖点。,"常见于耳机、耳塞、头戴式音频设备"
-低延迟,low latency,zh,en,TECHNOLOGY,cross_border_ecommerce,电子产品响应速度类卖点。,"常见于耳机、键鼠、显示器和游戏设备"
-全额退款,full refund,zh,en,BUSINESS,cross_border_ecommerce,售后政策高频术语。,"常见于客服退款、售后协商场景"
-关税,customs duties,zh,en,BUSINESS,cross_border_ecommerce,跨境交易中的税费术语。,"常见于清关、税费说明和售后补贴场景"
-取消订单,cancel the order,zh,en,BUSINESS,cross_border_ecommerce,订单处理高频动作术语。,"常见于客服取消、售后协商和预售场景"
-可视窗,clear window,zh,en,BUSINESS,cross_border_ecommerce,收纳与包装类商品的可视窗口设计。,"常见于收纳箱、包装袋、衣物收纳产品"
-心率监测,heart rate monitoring,zh,en,TECHNOLOGY,cross_border_ecommerce,健康监测类功能术语。,"常见于智能手表、手环等穿戴设备"
-折叠,foldable,zh,en,BUSINESS,cross_border_ecommerce,家居与收纳场景中的折叠卖点。,"常见于收纳箱、桌椅、婴儿床等商品"
-折叠插脚,foldable plug,zh,en,TECHNOLOGY,cross_border_ecommerce,便携式充电器常见结构卖点。,"常见于墙充、旅行充电器、转换插头"
-断货,out of stock,zh,en,BUSINESS,cross_border_ecommerce,客服与库存场景高频术语。,"常见于客服回复、库存变更通知"
-海关,customs,zh,en,BUSINESS,cross_border_ecommerce,跨境物流高频术语。,"常见于物流追踪、清关进度说明"
-清关,customs clearance,zh,en,BUSINESS,cross_border_ecommerce,跨境物流与合规高频术语。,"常见于客服解释物流状态"
-物流,tracking,zh,en,BUSINESS,cross_border_ecommerce,在客服物流语境下通常对应物流追踪信息。,"常见于包裹状态通知与客服回复"
-续航,battery life,zh,en,TECHNOLOGY,cross_border_ecommerce,电子产品续航能力描述。,"常见于手表、耳机、灯具等电子设备"
-缓震,cushioning,zh,en,BUSINESS,cross_border_ecommerce,运动鞋常见功能卖点。,"用于跑鞋、训练鞋等缓震能力描述"
-训练短袖,training T-shirt,zh,en,BUSINESS,cross_border_ecommerce,服饰品类名称。,"用于运动服装标题和商品描述"
-轻量,lightweight,zh,en,BUSINESS,cross_border_ecommerce,电商卖点中强调产品重量轻。,"常见于跑鞋、户外装备、穿戴设备"
-退换货,return and exchange,zh,en,BUSINESS,cross_border_ecommerce,售后流程高频术语。,"常见于评论、客服政策和商品详情页"
-透气,breathable,zh,en,BUSINESS,cross_border_ecommerce,商品材质或穿着体验卖点。,"常见于鞋服、枕头、座椅坐垫等"
-透气网面,breathable mesh,zh,en,BUSINESS,cross_border_ecommerce,鞋服材质描述，强调网面透气。,"常见于运动鞋、服饰面料"
-速干,quick-dry,zh,en,BUSINESS,cross_border_ecommerce,服饰面料卖点，强调快干能力。,"常见于运动T恤、瑜伽服、户外服饰"
-部分补贴,partial reimbursement,zh,en,BUSINESS,cross_border_ecommerce,售后或物流补偿类术语。,"常见于关税补贴、运费补贴和补偿说明"
-防尘,dustproof,zh,en,BUSINESS,cross_border_ecommerce,商品防护类卖点术语。,"常见于收纳箱、家电罩、电子配件"
-防水,waterproof,zh,en,BUSINESS,cross_border_ecommerce,电商商品卖点中的防水属性。,"适用于鞋服、箱包、配件等商品标题与卖点描述"
-防潮,moisture-resistant,zh,en,BUSINESS,cross_border_ecommerce,家居与户外品类的防潮属性术语。,"常见于收纳用品、帐篷、鞋柜"
-预售商品,presale item,zh,en,BUSINESS,cross_border_ecommerce,订单和履约场景中的预售术语。,"常见于客服话术、商品页发货说明"
-食品级,food-grade,zh,en,BUSINESS,cross_border_ecommerce,食品接触安全等级描述。,"常见于水杯、餐具、厨房用品"
+﻿sourceTerm,targetTerm,sourceLanguage,targetLanguage,category,domain,definition,context
+20W PD快充,20W PD fast charging,zh,en,TECHNOLOGY,cross_border_ecommerce,充电器和移动电源的高频规格术语。,常见于充电器、移动电源、数据线页面
+20W快充,20W fast charging,zh,en,TECHNOLOGY,cross_border_ecommerce,充电功率与效率相关的常见规格术语。,常见于充电器、移动电源、数据线和手机配件页面
+304不锈钢,304 stainless steel,zh,en,BUSINESS,cross_border_ecommerce,厨房与家居品类常见材质术语。,常见于水杯、保温杯、餐具、厨具
+50米防水,50m water resistance,zh,en,TECHNOLOGY,cross_border_ecommerce,穿戴设备常见防水规格。,用于手表、手环等规格参数
+降噪,noise-cancelling,zh,en,TECHNOLOGY,cross_border_ecommerce,耳机和音频设备中的核心卖点术语。,常见于头戴耳机、耳塞和通勤音频设备页面
+防晒,sun protection,zh,en,BUSINESS,cross_border_ecommerce,夏季服饰和户外用品中的核心功能卖点。,常见于防晒衣、帽子、冰袖和户外配件页面
+即刻降温,instant cooling,zh,en,BUSINESS,cross_border_ecommerce,营销文案中强调清凉体感的高频表达。,常见于防晒服、凉感面料和夏季促销文案
+一箱多用,versatile storage,zh,en,BUSINESS,cross_border_ecommerce,收纳品类中强调多场景使用的营销表达。,常见于收纳箱、整理盒和后备箱收纳产品页面
+AMOLED,AMOLED,zh,en,TECHNOLOGY,cross_border_ecommerce,屏幕显示技术缩写，通常保留原文。,常见于智能手表、手机、显示设备
+BPA-Free,BPA-free,zh,en,BUSINESS,cross_border_ecommerce,安全材质标签，通常保留大写缩写。,常见于母婴、饮水、食品容器类商品
+GPS,GPS,zh,en,TECHNOLOGY,cross_border_ecommerce,全球定位系统缩写，通常保留原文。,常见于智能手表、导航设备、车载产品
+UPF50+,UPF 50+,zh,en,BUSINESS,cross_border_ecommerce,防晒服饰常见等级标识。,常见于防晒衣、帽子、户外服饰与配件
+USB-C接口,USB-C port,zh,en,TECHNOLOGY,cross_border_ecommerce,接口与连接标准术语。,常见于充电器、扩展坞、显示器和移动设备配件
+主动降噪,active noise cancelling,zh,en,TECHNOLOGY,cross_border_ecommerce,音频设备常见核心卖点。,常见于耳机、耳塞、头戴式音频设备
+低延迟,low latency,zh,en,TECHNOLOGY,cross_border_ecommerce,电子产品响应速度类卖点。,常见于耳机、键鼠、显示器和游戏设备
+全额退款,full refund,zh,en,BUSINESS,cross_border_ecommerce,售后政策高频术语。,常见于客服退款、售后协商场景
+关税,customs duties,zh,en,BUSINESS,cross_border_ecommerce,跨境交易中的税费术语。,常见于清关、税费说明和售后补贴场景
+取消订单,cancel the order,zh,en,BUSINESS,cross_border_ecommerce,订单处理高频动作术语。,常见于客服取消、售后协商和预售场景
+可视窗,clear window,zh,en,BUSINESS,cross_border_ecommerce,收纳与包装类商品的可视窗口设计。,常见于收纳箱、包装袋、衣物收纳产品
+心率监测,heart rate monitoring,zh,en,TECHNOLOGY,cross_border_ecommerce,健康监测类功能术语。,常见于智能手表、手环等穿戴设备
+折叠,foldable,zh,en,BUSINESS,cross_border_ecommerce,家居与收纳场景中的折叠卖点。,常见于收纳箱、桌椅、婴儿床等商品
+折叠插脚,foldable plug,zh,en,TECHNOLOGY,cross_border_ecommerce,便携式充电器常见结构卖点。,常见于墙充、旅行充电器、转换插头
+断货,out of stock,zh,en,BUSINESS,cross_border_ecommerce,客服与库存场景高频术语。,常见于客服回复、库存变更通知
+海关,customs,zh,en,BUSINESS,cross_border_ecommerce,跨境物流高频术语。,常见于物流追踪、清关进度说明
+清关,customs clearance,zh,en,BUSINESS,cross_border_ecommerce,跨境物流与合规高频术语。,常见于客服解释物流状态
+物流,tracking,zh,en,BUSINESS,cross_border_ecommerce,在客服物流语境下通常对应物流追踪信息。,常见于包裹状态通知与客服回复
+续航,battery life,zh,en,TECHNOLOGY,cross_border_ecommerce,电子产品续航能力描述。,常见于手表、耳机、灯具等电子设备
+缓震,cushioning,zh,en,BUSINESS,cross_border_ecommerce,运动鞋常见功能卖点。,用于跑鞋、训练鞋等缓震能力描述
+训练短袖,training T-shirt,zh,en,BUSINESS,cross_border_ecommerce,服饰品类名称。,用于运动服装标题和商品描述
+轻量,lightweight,zh,en,BUSINESS,cross_border_ecommerce,电商卖点中强调产品重量轻。,常见于跑鞋、户外装备、穿戴设备
+退换货,return and exchange,zh,en,BUSINESS,cross_border_ecommerce,售后流程高频术语。,常见于评论、客服政策和商品详情页
+透气,breathable,zh,en,BUSINESS,cross_border_ecommerce,商品材质或穿着体验卖点。,常见于鞋服、枕头、座椅坐垫等
+透气网面,breathable mesh,zh,en,BUSINESS,cross_border_ecommerce,鞋服材质描述，强调网面透气。,常见于运动鞋、服饰面料
+速干,quick-dry,zh,en,BUSINESS,cross_border_ecommerce,服饰面料卖点，强调快干能力。,常见于运动T恤、瑜伽服、户外服饰
+部分补贴,partial reimbursement,zh,en,BUSINESS,cross_border_ecommerce,售后或物流补偿类术语。,常见于关税补贴、运费补贴和补偿说明
+防尘,dustproof,zh,en,BUSINESS,cross_border_ecommerce,商品防护类卖点术语。,常见于收纳箱、家电罩、电子配件
+防水,waterproof,zh,en,BUSINESS,cross_border_ecommerce,电商商品卖点中的防水属性。,适用于鞋服、箱包、配件等商品标题与卖点描述
+防潮,moisture-resistant,zh,en,BUSINESS,cross_border_ecommerce,家居与户外品类的防潮属性术语。,常见于收纳用品、帐篷、鞋柜
+预售商品,presale item,zh,en,BUSINESS,cross_border_ecommerce,订单和履约场景中的预售术语。,常见于客服话术、商品页发货说明
+食品级,food-grade,zh,en,BUSINESS,cross_border_ecommerce,食品接触安全等级描述。,常见于水杯、餐具、厨房用品
