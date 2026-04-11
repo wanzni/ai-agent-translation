@@ -5,6 +5,8 @@ import cn.net.wanzni.ai.translation.entity.TerminologyEntry;
 import cn.net.wanzni.ai.translation.repository.TerminologyEntryRepository;
 import cn.net.wanzni.ai.translation.service.impl.TerminologyStatisticsServiceImpl;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 
 import java.util.List;
 
@@ -19,12 +21,12 @@ class TerminologyStatisticsServiceImplTest {
         TerminologyEntryRepository repository = mock(TerminologyEntryRepository.class);
         TerminologyStatisticsServiceImpl service = new TerminologyStatisticsServiceImpl(repository);
 
-        when(repository.findByUserId(8L)).thenReturn(List.of(
+        when(repository.findByUserId(8L, Pageable.unpaged())).thenReturn(new PageImpl<>(List.of(
                 entry(1L, "防水", "waterproof", TerminologyEntry.TerminologyCategory.BUSINESS, "zh", "en", true),
                 entry(2L, "轻量", "lightweight", TerminologyEntry.TerminologyCategory.BUSINESS, "zh", "en", true),
                 entry(3L, "AMOLED", "AMOLED", TerminologyEntry.TerminologyCategory.TECHNOLOGY, "zh", "en", true),
                 entry(4L, "已停用", "deprecated", TerminologyEntry.TerminologyCategory.GENERAL, "zh", "en", false)
-        ));
+        )));
 
         TerminologyStatsResponse response = service.getTerminologyStatisticsResponse("8");
 

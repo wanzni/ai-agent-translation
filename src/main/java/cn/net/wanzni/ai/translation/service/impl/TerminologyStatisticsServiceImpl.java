@@ -9,6 +9,7 @@ import cn.net.wanzni.ai.translation.service.TerminologyStatisticsService;
 import cn.net.wanzni.ai.translation.util.UserContextUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -20,11 +21,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-/**
- * 术语库统计服务实现类
- *
- * @version 1.0.0
- */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -51,7 +47,9 @@ public class TerminologyStatisticsServiceImpl implements TerminologyStatisticsSe
                 return statistics;
             }
 
-            List<TerminologyEntry> entries = terminologyEntryRepository.findByUserId(uid).stream()
+            List<TerminologyEntry> entries = terminologyEntryRepository.findByUserId(uid, Pageable.unpaged())
+                    .getContent()
+                    .stream()
                     .filter(entry -> !Boolean.FALSE.equals(entry.getIsActive()))
                     .collect(Collectors.toList());
 
