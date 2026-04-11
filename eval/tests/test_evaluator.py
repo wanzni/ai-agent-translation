@@ -56,11 +56,11 @@ class EvaluatorTests(unittest.TestCase):
 
         summary = json.loads(summary_path.read_text(encoding="utf-8"))
         self.assertEqual("cross-border-ecom-eval", summary["datasetInfo"]["datasetName"])
-        self.assertEqual(8, summary["datasetInfo"]["totalSamples"])
+        self.assertEqual(16, summary["datasetInfo"]["totalSamples"])
         self.assertAlmostEqual(1.0, summary["overallScore"], places=4)
 
         details_lines = details_path.read_text(encoding="utf-8").strip().splitlines()
-        self.assertEqual(8, len(details_lines))
+        self.assertEqual(16, len(details_lines))
         report_text = report_path.read_text(encoding="utf-8")
         self.assertIn("Overall Metrics", report_text)
 

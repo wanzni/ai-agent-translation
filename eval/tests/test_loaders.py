@@ -1,12 +1,12 @@
-﻿import unittest
+import unittest
 
 from eval.scripts.loaders import discover_samples, validate_sample
 
 
 class LoaderTests(unittest.TestCase):
-    def test_discover_samples_loads_eight_seed_samples(self):
+    def test_discover_samples_loads_sixteen_seed_samples(self):
         samples = discover_samples("eval/samples/v1")
-        self.assertEqual(8, len(samples))
+        self.assertEqual(16, len(samples))
 
     def test_missing_reference_text_is_invalid(self):
         sample = {
