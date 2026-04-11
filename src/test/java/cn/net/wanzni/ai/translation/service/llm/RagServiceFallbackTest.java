@@ -2,6 +2,8 @@ package cn.net.wanzni.ai.translation.service.llm;
 
 import cn.net.wanzni.ai.translation.dto.RagContext;
 import cn.net.wanzni.ai.translation.dto.TranslationMemoryMatch;
+import cn.net.wanzni.ai.translation.dto.TranslationRequest;
+import cn.net.wanzni.ai.translation.entity.TerminologyEntry;
 import cn.net.wanzni.ai.translation.entity.TranslationRecord;
 import cn.net.wanzni.ai.translation.repository.TerminologyEntryRepository;
 import cn.net.wanzni.ai.translation.repository.TranslationRecordRepository;
@@ -16,6 +18,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -81,6 +84,54 @@ class RagServiceFallbackTest {
         assertEquals(1, snippets.size());
         assertEquals("TM", snippets.get(0).getSourceType());
         verify(translationRecordRepository, never()).findRagFallbackCandidates(any(), any(), any(), any());
+    }
+
+    @Test
+    void shouldIgnoreCorruptedGlossaryTermsThatAreOnlyQuestionMarks() throws Exception {
+        TerminologyEntryRepository terminologyEntryRepository = mock(TerminologyEntryRepository.class);
+        TranslationMemoryService translationMemoryService = mock(TranslationMemoryService.class);
+        TranslationRecordRepository translationRecordRepository = mock(TranslationRecordRepository.class);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<org.springframework.ai.embedding.EmbeddingModel> objectProvider = mock(ObjectProvider.class);
+        RagService ragService = new RagService(
+                terminologyEntryRepository,
+                translationMemoryService,
+                translationRecordRepository,
+                objectProvider
+        );
+
+        TerminologyEntry brokenEntry = TerminologyEntry.builder()
+                .sourceTerm("??")
+                .targetTerm("sun protection")
+                .sourceLanguage("zh")
+                .targetLanguage("en")
+                .userId(8L)
+                .isActive(true)
+                .category(TerminologyEntry.TerminologyCategory.BUSINESS)
+                .build();
+
+        when(terminologyEntryRepository.findByUserIdAndSourceLanguageAndTargetLanguage(8L, "zh", "en"))
+                .thenReturn(List.of(brokenEntry));
+        when(translationMemoryService.searchSimilar("??????", "zh", "en", "cross_border_ecommerce", 5))
+                .thenReturn(List.of());
+        when(translationRecordRepository.findRagFallbackCandidates(eq("zh"), eq("en"), eq("cross_border_ecommerce"), any(Pageable.class)))
+                .thenReturn(List.of());
+
+        TranslationRequest request = TranslationRequest.builder()
+                .sourceText("??????")
+                .sourceLanguage("zh")
+                .targetLanguage("en")
+                .domain("cross_border_ecommerce")
+                .userId(8L)
+                .useTerminology(true)
+                .useRag(true)
+                .build();
+
+        RagContext context = ragService.buildRagContext(request);
+
+        assertTrue(context.getGlossaryMap().isEmpty());
+        assertEquals(request.getSourceText(), context.getPreprocessedSourceText());
+        assertFalse(context.getRetrievalReasons().contains("GLOSSARY_HIT"));
     }
 
     @SuppressWarnings("unchecked")

@@ -77,7 +77,7 @@ public class RagService {
             if (StringUtils.hasText(request.getDomain())) {
                 retrievalReasons.add("DOMAIN_FILTER=" + request.getDomain());
             }
-            // 提取关键词（简单分词，可替换为更强的分词器）
+
             List<String> tokens = extractKeywords(request.getSourceText());
             int topK = Optional.ofNullable(request.getRagTopK()).orElse(5);
             RagRetrievalPlan retrievalPlan = retrievalDecisionPolicy.decide(request, tokens);
@@ -85,15 +85,15 @@ public class RagService {
             useHistory = retrievalPlan.retrieveHistory();
             retrievalReasons = new ArrayList<>(retrievalPlan.reasons());
 
-            // 术语检索（中文等无空格场景增加回退：按源文本包含匹配）
             String normSrcLang = normalizeLanguage(request.getSourceLanguage(), request.getSourceText());
             String normTgtLang = normalizeLanguage(request.getTargetLanguage(), null);
-            Map<String, String> glossaryMap = buildGlossaryMap(//术语表
+            Map<String, String> glossaryMap = buildGlossaryMap(
                     tokens,
                     normSrcLang,
                     normTgtLang,
                     request.getDomain(),
-                    request.getSourceText()
+                    request.getSourceText(),
+                    request.getUserId()
             );
             if (!useTerminology) {
                 glossaryMap = new LinkedHashMap<>();
@@ -102,7 +102,6 @@ public class RagService {
                 retrievalReasons.add("GLOSSARY_HIT");
             }
 
-            // 历史检索（优先用户维度，其次全局维度）
             List<RagContext.HistorySnippet> historySnippets = searchHistorySnippets(
                     request.getSourceText(),
                     normSrcLang,
@@ -117,24 +116,17 @@ public class RagService {
                 retrievalReasons.add("HISTORY_HIT");
             }
 
-            // 组装上下文片段：术语说明 + 历史示例
             List<String> contextSnippets = new ArrayList<>();
-            if (!glossaryMap.isEmpty()) {
-                contextSnippets.add("Terminology constraints (source -> target):");
-                glossaryMap.forEach((src, tgt) -> contextSnippets.add(src + " => " + tgt));
-            }
             if (!historySnippets.isEmpty()) {
                 contextSnippets.add("Relevant translation memory examples:");
-                for (RagContext.HistorySnippet s : historySnippets) {
-                    contextSnippets.add("SOURCE_TYPE: " + Optional.ofNullable(s.getSourceType()).orElse("UNKNOWN")
-                            + "\nSRC: " + Optional.ofNullable(s.getSource()).orElse("")
-                            + "\nTGT: " + Optional.ofNullable(s.getTarget()).orElse(""));
+                for (RagContext.HistorySnippet snippet : historySnippets) {
+                    contextSnippets.add("SOURCE_TYPE: " + Optional.ofNullable(snippet.getSourceType()).orElse("UNKNOWN")
+                            + "\nSRC: " + Optional.ofNullable(snippet.getSource()).orElse("")
+                            + "\nTGT: " + Optional.ofNullable(snippet.getTarget()).orElse(""));
                 }
             }
 
-            // 使用 Spring AI Embedding 做相似度排序（若可用），仅保留 TopK 片段
             List<String> rankedSnippets = fusionSupport.fuse(request.getSourceText(), contextSnippets, topK);
-            // 基于术语映射对源文本进行前置处理，生成预处理文本
             String preprocessed = preprocessSourceWithGlossary(request.getSourceText(), glossaryMap);
 
             return RagContext.builder()
@@ -153,7 +145,7 @@ public class RagService {
                     .preprocessedSourceText(preprocessed)
                     .build();
         } catch (Exception e) {
-            log.error("构建RAG上下文失败: {}", e.getMessage(), e);
+            log.error("??RAG?????: {}", e.getMessage(), e);
             throw e;
         }
     }
@@ -235,68 +227,102 @@ public class RagService {
      * @param sourceText the source text
      * @return the glossary map
      */
-    private Map<String, String> buildGlossaryMap(List<String> tokens, String srcLang, String tgtLang, String domain, String sourceText) {
+    private Map<String, String> buildGlossaryMap(List<String> tokens,
+                                                 String srcLang,
+                                                 String tgtLang,
+                                                 String domain,
+                                                 String sourceText,
+                                                 Long userId) {
         Map<String, String> map = new LinkedHashMap<>();
         try {
-            if (!tokens.isEmpty()) {
-                List<TerminologyEntry> entries = terminologyEntryRepository
-                        .findBySourceTermsAndLanguagePair(tokens, srcLang, tgtLang);
+            List<TerminologyEntry> scopedEntries = loadScopedEntries(srcLang, tgtLang, userId);
 
-                for (TerminologyEntry e : entries) {
-                    if (e.getIsActive() != null && !e.getIsActive()) continue;
-                    if (StringUtils.hasText(domain) && e.getDomain() != null && !domain.equalsIgnoreCase(e.getDomain())) {
+            if (!tokens.isEmpty()) {
+                for (TerminologyEntry entry : scopedEntries) {
+                    if (!isEligibleEntry(entry, domain)) {
                         continue;
                     }
-                    String sourceTerm = e.getSourceTerm();
-                    String targetTerm = e.getTargetTerm();
-                    if (StringUtils.hasText(sourceTerm) && StringUtils.hasText(targetTerm)) {
-                        map.putIfAbsent(sourceTerm, targetTerm);
+                    String sourceTerm = entry.getSourceTerm();
+                    if (tokens.contains(sourceTerm)) {
+                        map.putIfAbsent(sourceTerm, entry.getTargetTerm());
                     }
                 }
             }
 
-            // 回退：当未命中或中文长文本未被分词时，按源文本包含匹配语言对下的术语
             if (map.isEmpty() && StringUtils.hasText(sourceText)) {
-                List<TerminologyEntry> allByLangPair = terminologyEntryRepository
-                        .findBySourceLanguageAndTargetLanguageAndIsActiveTrue(srcLang, tgtLang, PageRequest.of(0, 500))
-                        .getContent();
-                for (TerminologyEntry e : allByLangPair) {
-                    if (e.getIsActive() != null && !e.getIsActive()) continue;
-                    if (StringUtils.hasText(domain) && e.getDomain() != null && !domain.equalsIgnoreCase(e.getDomain())) {
+                for (TerminologyEntry entry : scopedEntries) {
+                    if (!isEligibleEntry(entry, domain)) {
                         continue;
                     }
-                    String sourceTerm = e.getSourceTerm();
-                    String targetTerm = e.getTargetTerm();
-                    if (StringUtils.hasText(sourceTerm) && StringUtils.hasText(targetTerm)
-                            && sourceText.contains(sourceTerm)) {
-                        map.putIfAbsent(sourceTerm, targetTerm);
+                    String sourceTerm = entry.getSourceTerm();
+                    if (sourceText.contains(sourceTerm)) {
+                        map.putIfAbsent(sourceTerm, entry.getTargetTerm());
                     }
                 }
-                // 进一步回退：当源语言为自动检测或未知，尝试按目标语言聚合（忽略源语言），提升命中率
+
                 if (map.isEmpty() && (srcLang == null || "auto".equalsIgnoreCase(srcLang))) {
-                    // 简化策略：尝试常用中文代码集
                     for (String zhVariant : new String[]{"zh", "zh-CN", "zh-Hans"}) {
-                        List<TerminologyEntry> allByZhPair = terminologyEntryRepository
-                                .findBySourceLanguageAndTargetLanguageAndIsActiveTrue(zhVariant, tgtLang, PageRequest.of(0, 500))
-                                .getContent();
-                        for (TerminologyEntry e : allByZhPair) {
-                            if (e.getIsActive() != null && !e.getIsActive()) continue;
-                            if (StringUtils.hasText(domain) && e.getDomain() != null && !domain.equalsIgnoreCase(e.getDomain())) continue;
-                            String sourceTerm = e.getSourceTerm();
-                            String targetTerm = e.getTargetTerm();
-                            if (StringUtils.hasText(sourceTerm) && StringUtils.hasText(targetTerm)
-                                    && sourceText.contains(sourceTerm)) {
-                                map.putIfAbsent(sourceTerm, targetTerm);
+                        List<TerminologyEntry> allByZhPair = userId != null
+                                ? terminologyEntryRepository.findByUserIdAndSourceLanguageAndTargetLanguage(userId, zhVariant, tgtLang)
+                                : terminologyEntryRepository.findBySourceLanguageAndTargetLanguageAndIsActiveTrue(zhVariant, tgtLang, PageRequest.of(0, 500)).getContent();
+                        for (TerminologyEntry entry : allByZhPair) {
+                            if (!isEligibleEntry(entry, domain)) {
+                                continue;
+                            }
+                            String sourceTerm = entry.getSourceTerm();
+                            if (sourceText.contains(sourceTerm)) {
+                                map.putIfAbsent(sourceTerm, entry.getTargetTerm());
                             }
                         }
-                        if (!map.isEmpty()) break;
+                        if (!map.isEmpty()) {
+                            break;
+                        }
                     }
                 }
             }
         } catch (Exception e) {
-            log.warn("术语检索失败，降级为空映射: {}", e.getMessage());
+            log.warn("????????????????????: {}", e.getMessage());
         }
         return map;
+    }
+
+    private List<TerminologyEntry> loadScopedEntries(String srcLang, String tgtLang, Long userId) {
+        if (userId != null) {
+            return terminologyEntryRepository.findByUserIdAndSourceLanguageAndTargetLanguage(userId, srcLang, tgtLang);
+        }
+        return terminologyEntryRepository
+                .findBySourceLanguageAndTargetLanguageAndIsActiveTrue(srcLang, tgtLang, PageRequest.of(0, 500))
+                .getContent();
+    }
+
+    private boolean isEligibleEntry(TerminologyEntry entry, String domain) {
+        if (entry == null) {
+            return false;
+        }
+        if (entry.getIsActive() != null && !entry.getIsActive()) {
+            return false;
+        }
+        if (StringUtils.hasText(domain) && entry.getDomain() != null && !domain.equalsIgnoreCase(entry.getDomain())) {
+            return false;
+        }
+        return isUsableSourceTerm(entry.getSourceTerm()) && StringUtils.hasText(entry.getTargetTerm());
+    }
+
+    private boolean isUsableSourceTerm(String sourceTerm) {
+        if (!StringUtils.hasText(sourceTerm)) {
+            return false;
+        }
+        String trimmed = sourceTerm.trim();
+        if (trimmed.length() < 2) {
+            return false;
+        }
+        long substantiveChars = trimmed.chars().filter(this::isSubstantiveSourceChar).count();
+        return substantiveChars >= 2;
+    }
+
+    private boolean isSubstantiveSourceChar(int codePoint) {
+        return Character.isLetterOrDigit(codePoint)
+                || Character.UnicodeScript.of(codePoint) == Character.UnicodeScript.HAN;
     }
 
     /**
@@ -308,24 +334,8 @@ public class RagService {
      * @return the preprocessed source text
      */
     private String preprocessSourceWithGlossary(String sourceText, Map<String, String> glossaryMap) {
-        if (!StringUtils.hasText(sourceText) || glossaryMap == null || glossaryMap.isEmpty()) {
-            return sourceText;
-        }
-        String processed = sourceText;
-        try {
-            for (Map.Entry<String, String> e : glossaryMap.entrySet()) {
-                String src = e.getKey();
-                String tgt = e.getValue();
-                if (StringUtils.hasText(src) && StringUtils.hasText(tgt) && processed.contains(src)) {
-                    // 简单替换：将源术语替换为 [[目标术语]]
-                    processed = processed.replace(src, "[[" + tgt + "]]" );
-                }
-            }
-        } catch (Exception ex) {
-            log.warn("术语前置处理失败，回退为原文本: {}", ex.getMessage());
-            return sourceText;
-        }
-        return processed;
+        // ????????????????????????????????????????????????????
+        return sourceText;
     }
 
     /**
