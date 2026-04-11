@@ -1,5 +1,14 @@
-{
-  "type": "mock",
-  "name": "mock-reference",
-  "strategy": "reference"
+﻿{
+  "type": "http",
+  "name": "local-translation-service",
+  "baseUrl": "http://127.0.0.1:7002",
+  "endpoint": "/api/translation/translate",
+  "translationEngine": "QWEN",
+  "translationType": "TEXT",
+  "useTerminology": true,
+  "useRag": true,
+  "needQualityAssessment": false,
+  "domain": "cross_border_ecommerce",
+  "requestSource": "offline_eval",
+  "timeoutSeconds": 60
 }

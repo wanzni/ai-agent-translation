@@ -32,10 +32,14 @@ class HttpTranslationClient:
         self.base_url = config["baseUrl"].rstrip("/")
         self.endpoint = config.get("endpoint", "/api/translation/translate")
         self.translation_engine = config.get("translationEngine", "QWEN")
+        self.translation_type = config.get("translationType", "TEXT")
         self.use_terminology = config.get("useTerminology", True)
         self.use_rag = config.get("useRag", True)
+        self.need_quality_assessment = config.get("needQualityAssessment", False)
+        self.priority = config.get("priority", 1)
         self.domain = config.get("domain")
         self.request_source = config.get("requestSource", "offline_eval")
+        self.client_info = config.get("clientInfo")
         self.timeout_seconds = config.get("timeoutSeconds", 60)
         self.name = config.get("name", "http")
 
@@ -44,13 +48,17 @@ class HttpTranslationClient:
             "sourceText": sample["sourceText"],
             "sourceLanguage": sample["sourceLanguage"],
             "targetLanguage": sample["targetLanguage"],
+            "translationType": self.translation_type,
             "translationEngine": self.translation_engine,
             "useTerminology": self.use_terminology,
             "useRag": self.use_rag,
-            "needQualityAssessment": False,
+            "needQualityAssessment": self.need_quality_assessment,
+            "priority": self.priority,
             "domain": self.domain,
             "requestSource": self.request_source,
         }
+        if self.client_info is not None:
+            payload["clientInfo"] = self.client_info
         req = urllib_request.Request(
             self.base_url + self.endpoint,
             data=json.dumps(payload).encode("utf-8"),
@@ -198,3 +206,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

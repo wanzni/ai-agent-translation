@@ -18,7 +18,7 @@ class EvaluatorTests(unittest.TestCase):
             "--dataset-dir",
             "eval/samples/v1",
             "--model-config",
-            "eval/config/model-config.example.json",
+            "eval/config/model-config.mock.json",
             "--output-dir",
             str(tmpdir),
         ]
@@ -47,3 +47,4 @@ class EvaluatorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
