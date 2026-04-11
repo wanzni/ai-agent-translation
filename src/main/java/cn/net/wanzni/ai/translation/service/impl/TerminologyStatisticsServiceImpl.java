@@ -3,6 +3,7 @@ package cn.net.wanzni.ai.translation.service.impl;
 import cn.net.wanzni.ai.translation.dto.CategoryCountDTO;
 import cn.net.wanzni.ai.translation.dto.LanguagePairCountDTO;
 import cn.net.wanzni.ai.translation.dto.TerminologyStatsResponse;
+import cn.net.wanzni.ai.translation.entity.TerminologyEntry;
 import cn.net.wanzni.ai.translation.repository.TerminologyEntryRepository;
 import cn.net.wanzni.ai.translation.service.TerminologyStatisticsService;
 import cn.net.wanzni.ai.translation.util.UserContextUtils;
@@ -12,9 +13,12 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 术语库统计服务实现类
@@ -28,37 +32,32 @@ public class TerminologyStatisticsServiceImpl implements TerminologyStatisticsSe
 
     private final TerminologyEntryRepository terminologyEntryRepository;
 
-    /**
-     * 获取术语库统计信息
-     *
-     * @param createdBy 创建者ID（可选，为空则获取全局统计）
-     * @return 统计信息Map，包含术语数量、语言对分布、分类统计等
-     * @throws Exception 统计过程中的异常
-     */
     @Override
     public Map<String, Object> getTerminologyStatistics(String createdBy) throws Exception {
         try {
             log.info("获取术语统计信息: userId={}", createdBy);
 
             Map<String, Object> statistics = new HashMap<>();
-            // 统一以当前登录用户为优先；若未提供 createdBy 则尝试从请求上下文获取
             Long uid = safeParseUserId(createdBy);
             if (uid == null) {
                 String currentUserId = UserContextUtils.getCurrentValidUserId();
                 uid = safeParseUserId(currentUserId);
             }
 
-            if (uid != null) {
-                statistics.put("totalEntries", terminologyEntryRepository.countByUserId(uid));
-                statistics.put("categoryCounts", terminologyEntryRepository.getCategoryCountsByUserId(uid));
-                statistics.put("languagePairCounts", terminologyEntryRepository.getLanguagePairCountsByUserId(uid));
-            } else {
-                // 未识别到有效用户，则返回空统计，避免展示全局数据
+            if (uid == null) {
                 statistics.put("totalEntries", 0L);
-                statistics.put("categoryCounts", java.util.Collections.emptyList());
-                statistics.put("languagePairCounts", java.util.Collections.emptyList());
+                statistics.put("categoryCounts", Collections.emptyList());
+                statistics.put("languagePairCounts", Collections.emptyList());
+                return statistics;
             }
 
+            List<TerminologyEntry> entries = terminologyEntryRepository.findByUserId(uid).stream()
+                    .filter(entry -> !Boolean.FALSE.equals(entry.getIsActive()))
+                    .collect(Collectors.toList());
+
+            statistics.put("totalEntries", (long) entries.size());
+            statistics.put("categoryCounts", aggregateCategoryCounts(entries));
+            statistics.put("languagePairCounts", aggregateLanguagePairCounts(entries));
             return statistics;
         } catch (Exception e) {
             log.error("获取术语统计信息失败: {}", e.getMessage());
@@ -66,13 +65,6 @@ public class TerminologyStatisticsServiceImpl implements TerminologyStatisticsSe
         }
     }
 
-    /**
-     * 获取术语库统计（DTO版本，控制器零逻辑直接返回）
-     *
-     * @param createdBy 创建者（可选）
-     * @return 术语库统计响应体
-     * @throws Exception 查询过程中的异常
-     */
     @Override
     public TerminologyStatsResponse getTerminologyStatisticsResponse(String createdBy) throws Exception {
         Map<String, Object> statsMap = getTerminologyStatistics(createdBy);
@@ -123,53 +115,30 @@ public class TerminologyStatisticsServiceImpl implements TerminologyStatisticsSe
                 .build();
     }
 
-    /**
-     * 获取术语使用频率统计
-     *
-     * @param sourceLanguage 源语言（可选）
-     * @param targetLanguage 目标语言（可选）
-     * @param limit 返回数量限制
-     * @return 使用频率统计列表
-     * @throws Exception 统计过程中的异常
-     */
     @Override
     public List<Map<String, Object>> getTermUsageStatistics(String sourceLanguage, String targetLanguage, Integer limit) throws Exception {
         try {
             log.info("获取术语使用频率统计");
-
-            List<Map<String, Object>> results = new ArrayList<>();
-            return results;
+            return new ArrayList<>();
         } catch (Exception e) {
             log.error("获取术语使用频率统计失败: {}", e.getMessage());
             throw e;
         }
     }
 
-    /**
-     * 获取术语分类列表
-     *
-     * @return 术语分类列表
-     * @throws Exception 查询过程中的异常
-     */
     @Override
     public List<String> getTerminologyCategories() throws Exception {
         try {
             log.info("获取术语分类列表");
             return terminologyEntryRepository.findDistinctCategories().stream()
                     .map(Enum::name)
-                    .collect(java.util.stream.Collectors.toList());
+                    .collect(Collectors.toList());
         } catch (Exception e) {
             log.error("获取术语分类列表失败: {}", e.getMessage());
             throw e;
         }
     }
 
-    /**
-     * 获取领域标签列表
-     *
-     * @return 领域标签列表
-     * @throws Exception 查询过程中的异常
-     */
     @Override
     public List<String> getDomainTags() throws Exception {
         try {
@@ -181,12 +150,33 @@ public class TerminologyStatisticsServiceImpl implements TerminologyStatisticsSe
         }
     }
 
-    /**
-     * 安全地将用户ID字符串解析为Long类型
-     *
-     * @param userIdStr 用户ID字符串
-     * @return 解析成功返回Long类型的用户ID，否则返回null
-     */
+    private List<Object[]> aggregateCategoryCounts(List<TerminologyEntry> entries) {
+        Map<String, Long> counts = entries.stream()
+                .filter(entry -> entry.getCategory() != null)
+                .collect(Collectors.groupingBy(entry -> entry.getCategory().name(), LinkedHashMap::new, Collectors.counting()));
+        return counts.entrySet().stream()
+                .sorted((left, right) -> Long.compare(right.getValue(), left.getValue()))
+                .map(entry -> new Object[]{entry.getKey(), entry.getValue()})
+                .collect(Collectors.toList());
+    }
+
+    private List<Object[]> aggregateLanguagePairCounts(List<TerminologyEntry> entries) {
+        Map<String, Long> counts = entries.stream()
+                .filter(entry -> entry.getSourceLanguage() != null && entry.getTargetLanguage() != null)
+                .collect(Collectors.groupingBy(
+                        entry -> entry.getSourceLanguage() + "\u0000" + entry.getTargetLanguage(),
+                        LinkedHashMap::new,
+                        Collectors.counting()
+                ));
+        return counts.entrySet().stream()
+                .sorted((left, right) -> Long.compare(right.getValue(), left.getValue()))
+                .map(entry -> {
+                    String[] parts = entry.getKey().split("\u0000", 2);
+                    return new Object[]{parts[0], parts[1], entry.getValue()};
+                })
+                .collect(Collectors.toList());
+    }
+
     private Long safeParseUserId(String userIdStr) {
         if (userIdStr == null) {
             return null;
