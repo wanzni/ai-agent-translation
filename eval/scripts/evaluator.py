@@ -1,9 +1,11 @@
-﻿import argparse
+import argparse
 import json
+import os
 import time
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib import error as urllib_error
 from urllib import request as urllib_request
 
 from loaders import discover_samples, load_rule_registry, load_scoring_config, read_json, write_json, write_jsonl
@@ -42,6 +44,37 @@ class HttpTranslationClient:
         self.client_info = config.get("clientInfo")
         self.timeout_seconds = config.get("timeoutSeconds", 60)
         self.name = config.get("name", "http")
+        auth_token_env = config.get("authTokenEnv")
+        self.auth_token = config.get("authToken")
+        if not self.auth_token and auth_token_env:
+            self.auth_token = os.getenv(auth_token_env)
+        if not self.auth_token:
+            self.auth_token = os.getenv("AUTH_TOKEN")
+        self.extra_headers = dict(config.get("headers", {}))
+
+    def _build_headers(self):
+        headers = {"Content-Type": "application/json"}
+        headers.update(self.extra_headers)
+        if self.auth_token:
+            headers["Authorization"] = f"Bearer {self.auth_token}"
+        return headers
+
+    @staticmethod
+    def _extract_translated_text(body, case_id):
+        if isinstance(body, dict):
+            translated_text = body.get("translatedText")
+            if translated_text:
+                return translated_text
+            data = body.get("data")
+            if isinstance(data, dict):
+                translated_text = data.get("translatedText")
+                if translated_text:
+                    return translated_text
+            if body.get("success") is False:
+                raise ValueError(
+                    f"Translation API returned success=false for case {case_id}: {body.get('message') or body.get('error') or body}"
+                )
+        raise ValueError(f"No translatedText found in response for case {case_id}: {body}")
 
     def translate(self, sample):
         payload = {
@@ -62,15 +95,18 @@ class HttpTranslationClient:
         req = urllib_request.Request(
             self.base_url + self.endpoint,
             data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            headers=self._build_headers(),
             method="POST",
         )
-        with urllib_request.urlopen(req, timeout=self.timeout_seconds) as response:
-            body = json.loads(response.read().decode("utf-8"))
-        translated_text = body.get("translatedText")
-        if not translated_text:
-            raise ValueError(f"No translatedText found in response for case {sample['caseId']}")
-        return translated_text
+        try:
+            with urllib_request.urlopen(req, timeout=self.timeout_seconds) as response:
+                body = json.loads(response.read().decode("utf-8"))
+        except urllib_error.HTTPError as exc:
+            response_body = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(
+                f"Translation request failed for case {sample['caseId']} with HTTP {exc.code}: {response_body}"
+            ) from exc
+        return self._extract_translated_text(body, sample["caseId"])
 
 
 def build_client(model_config_path):
@@ -206,4 +242,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

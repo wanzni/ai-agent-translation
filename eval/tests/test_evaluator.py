@@ -1,10 +1,30 @@
-﻿import json
+import json
+import os
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, str(Path("eval/scripts").resolve()))
+from evaluator import HttpTranslationClient  # noqa: E402
+
+
+class HttpTranslationClientTests(unittest.TestCase):
+    def test_build_headers_uses_auth_token_from_env(self):
+        os.environ["AUTH_TOKEN"] = "jwt-token"
+        self.addCleanup(lambda: os.environ.pop("AUTH_TOKEN", None))
+
+        client = HttpTranslationClient({"baseUrl": "http://127.0.0.1:7002"})
+
+        headers = client._build_headers()
+        self.assertEqual("Bearer jwt-token", headers["Authorization"])
+        self.assertEqual("application/json", headers["Content-Type"])
+
+    def test_extract_translated_text_supports_wrapped_api_response(self):
+        body = {"success": True, "data": {"translatedText": "hello"}}
+        self.assertEqual("hello", HttpTranslationClient._extract_translated_text(body, "case-1"))
 
 
 class EvaluatorTests(unittest.TestCase):
@@ -47,4 +67,3 @@ class EvaluatorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

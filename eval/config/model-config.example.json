@@ -1,8 +1,9 @@
-﻿{
+{
   "type": "http",
   "name": "local-translation-service",
   "baseUrl": "http://127.0.0.1:7002",
   "endpoint": "/api/translation/translate",
+  "authTokenEnv": "AUTH_TOKEN",
   "translationEngine": "QWEN",
   "translationType": "TEXT",
   "useTerminology": true,
