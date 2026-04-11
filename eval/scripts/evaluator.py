@@ -157,6 +157,7 @@ def evaluate_dataset(samples, client, scoring_config):
             {
                 "caseId": sample["caseId"],
                 "category": sample["category"],
+                "priorityTier": sample["priorityTier"],
                 "modelOutput": output,
                 "termResults": term_results,
                 "numberResults": number_results,
@@ -172,8 +173,10 @@ def evaluate_dataset(samples, client, scoring_config):
 
 def build_summary(run_id, run_name, model_config, samples, details):
     category_groups = defaultdict(list)
+    tier_groups = defaultdict(list)
     for detail in details:
         category_groups[detail["category"]].append(detail)
+        tier_groups[detail["priorityTier"]].append(detail)
 
     def category_metrics(items):
         return {
@@ -186,6 +189,7 @@ def build_summary(run_id, run_name, model_config, samples, details):
 
     overall = category_metrics(details)
     dataset_counter = Counter(sample["category"] for sample in samples)
+    tier_counter = Counter(sample["priorityTier"] for sample in samples)
     return {
         "runId": run_id,
         "runName": run_name,
@@ -196,12 +200,14 @@ def build_summary(run_id, run_name, model_config, samples, details):
             "schemaVersion": "cross-border-ecom-eval/v3",
             "totalSamples": len(samples),
             "categories": dict(dataset_counter),
+            "priorityTiers": dict(tier_counter),
         },
         "overallScore": overall["overallScore"],
         "termAccuracy": overall["termAccuracy"],
         "numberAccuracy": overall["numberAccuracy"],
         "protectedTokenRetention": overall["protectedTokenRetention"],
         "criticalFailureRate": overall["criticalFailureRate"],
+        "tierBreakdown": {tier: category_metrics(items) for tier, items in sorted(tier_groups.items())},
         "categoryBreakdown": {category: category_metrics(items) for category, items in sorted(category_groups.items())},
     }
 

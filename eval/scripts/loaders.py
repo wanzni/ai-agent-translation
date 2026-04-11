@@ -1,13 +1,15 @@
-import json
+﻿import json
 from pathlib import Path
 
 
 ALLOWED_CATEGORIES = {
     "product_title",
     "product_description",
+    "marketing_copy",
     "customer_review",
     "customer_service_chat",
 }
+ALLOWED_PRIORITY_TIERS = {"primary", "secondary"}
 ALLOWED_DIFFICULTIES = {"easy", "medium", "hard"}
 ALLOWED_TERM_MODES = {"exact", "contains", "normalized"}
 ALLOWED_NUMBER_MODES = {"exact"}
@@ -97,6 +99,7 @@ def validate_sample(sample):
         "split",
         "domain",
         "category",
+        "priorityTier",
         "difficulty",
         "sourceLanguage",
         "targetLanguage",
@@ -118,6 +121,8 @@ def validate_sample(sample):
         raise ValueError("Unsupported schemaVersion")
     if sample["category"] not in ALLOWED_CATEGORIES:
         raise ValueError("Invalid category")
+    if sample["priorityTier"] not in ALLOWED_PRIORITY_TIERS:
+        raise ValueError("Invalid priorityTier")
     if sample["difficulty"] not in ALLOWED_DIFFICULTIES:
         raise ValueError("Invalid difficulty")
     if sample["split"] != "eval":

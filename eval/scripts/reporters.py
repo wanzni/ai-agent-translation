@@ -17,6 +17,15 @@ def build_markdown_report(summary, details):
     lines.append(f"- Protected Token Retention: `{summary['protectedTokenRetention']:.4f}`")
     lines.append(f"- Critical Failure Rate: `{summary['criticalFailureRate']:.4f}`")
     lines.append("")
+    lines.append("## Tier Breakdown")
+    lines.append("")
+    for tier, metrics in sorted(summary.get("tierBreakdown", {}).items()):
+        lines.append(
+            f"- `{tier}`: score={metrics['overallScore']:.4f}, "
+            f"term={metrics['termAccuracy']:.4f}, number={metrics['numberAccuracy']:.4f}, "
+            f"protected={metrics['protectedTokenRetention']:.4f}, critical={metrics['criticalFailureRate']:.4f}"
+        )
+    lines.append("")
     lines.append("## Category Breakdown")
     lines.append("")
     for category, metrics in sorted(summary["categoryBreakdown"].items()):
@@ -48,6 +57,7 @@ def build_markdown_report(summary, details):
         for detail in failures[:5]:
             lines.append(f"### {detail['caseId']}")
             lines.append(f"- Category: `{detail['category']}`")
+            lines.append(f"- Priority Tier: `{detail.get('priorityTier', 'unknown')}`")
             lines.append(f"- Score: `{detail['sampleScore']:.4f}`")
             lines.append(f"- Critical Failures: `{', '.join(detail['criticalFailures'])}`")
             lines.append(f"- Model Output: {detail['modelOutput']}")

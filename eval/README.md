@@ -1,6 +1,30 @@
-# Cross-Border E-commerce Eval
+﻿# Cross-Border E-commerce Eval
 
 Offline evaluation toolkit for cross-border e-commerce translation quality.
+
+## Evaluation Priority
+
+The dataset is organized into two tiers:
+
+- `primary`: the main business scenarios used for project value and interview-facing conclusions
+  - `product_title`
+  - `product_description`
+  - `marketing_copy`
+- `secondary`: supporting scenarios used for residual risk analysis
+  - `customer_review`
+  - `customer_service_chat`
+
+Current seed set layout:
+
+- `product_title`: 4 samples
+- `product_description`: 4 samples
+- `marketing_copy`: 4 samples
+- `customer_review`: 4 samples
+- `customer_service_chat`: 4 samples
+
+Total: `20` samples
+- `primary`: `12`
+- `secondary`: `8`
 
 ## Layout
 
@@ -11,6 +35,20 @@ Offline evaluation toolkit for cross-border e-commerce translation quality.
 - `scripts/`: Python evaluator and helpers
 - `tests/`: Python unit tests
 - `results/`: generated outputs, ignored by git
+
+## Schema Usage
+
+Each sample includes a required `priorityTier` field:
+
+- `primary`: main benchmark lane
+- `secondary`: auxiliary risk lane
+
+`marketing_copy` is now a first-class `category` in the same schema as title and description. That means the same evaluator can score:
+
+- selling-point preservation
+- keyword and benefit coverage
+- numeric/spec retention when copy contains specs
+- high-severity marketing-term misses
 
 ## Quick Start
 
@@ -53,7 +91,7 @@ python eval/scripts/evaluator.py \
 
 ## Seed Glossary
 
-The first seed glossary extracted from the 8 evaluation samples is in [cross_border_ecommerce_seed_terms.csv](G:/programme/Projects/translation-ai-agent/eval/glossary/cross_border_ecommerce_seed_terms.csv).
+The current seed glossary for the expanded dataset is in [cross_border_ecommerce_seed_terms.csv](G:/programme/Projects/translation-ai-agent/eval/glossary/cross_border_ecommerce_seed_terms.csv).
 
 Preview the glossary payloads without sending requests:
 

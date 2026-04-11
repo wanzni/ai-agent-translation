@@ -1,12 +1,16 @@
-import unittest
+﻿import unittest
 
 from eval.scripts.loaders import discover_samples, validate_sample
 
 
 class LoaderTests(unittest.TestCase):
-    def test_discover_samples_loads_sixteen_seed_samples(self):
+    def test_discover_samples_loads_twenty_seed_samples(self):
         samples = discover_samples("eval/samples/v1")
-        self.assertEqual(16, len(samples))
+        self.assertEqual(20, len(samples))
+        primary = [sample for sample in samples if sample["priorityTier"] == "primary"]
+        secondary = [sample for sample in samples if sample["priorityTier"] == "secondary"]
+        self.assertEqual(12, len(primary))
+        self.assertEqual(8, len(secondary))
 
     def test_missing_reference_text_is_invalid(self):
         sample = {
@@ -16,6 +20,7 @@ class LoaderTests(unittest.TestCase):
             "split": "eval",
             "domain": "cross_border_ecommerce",
             "category": "product_title",
+            "priorityTier": "primary",
             "difficulty": "easy",
             "sourceLanguage": "zh",
             "targetLanguage": "en",
@@ -49,6 +54,7 @@ class LoaderTests(unittest.TestCase):
             "split": "eval",
             "domain": "cross_border_ecommerce",
             "category": "product_title",
+            "priorityTier": "primary",
             "difficulty": "easy",
             "sourceLanguage": "zh",
             "targetLanguage": "en",
@@ -60,7 +66,7 @@ class LoaderTests(unittest.TestCase):
                 "allowUnitConversion": False,
             },
             "expectedTerms": [
-                {"source": "词", "targets": [], "required": True, "severity": "high", "category": "feature"}
+                {"source": "term", "targets": [], "required": True, "severity": "high", "category": "feature"}
             ],
             "expectedNumbersOrUnits": [],
             "expectedProtectedTokens": [],
@@ -84,6 +90,7 @@ class LoaderTests(unittest.TestCase):
             "split": "eval",
             "domain": "cross_border_ecommerce",
             "category": "product_title",
+            "priorityTier": "primary",
             "difficulty": "easy",
             "sourceLanguage": "zh",
             "targetLanguage": "en",
@@ -98,6 +105,40 @@ class LoaderTests(unittest.TestCase):
             "expectedNumbersOrUnits": [],
             "expectedProtectedTokens": [],
             "criticalFailureRuleIds": ["unknown_rule"],
+            "tags": [],
+            "annotationMetadata": {
+                "annotator": "manual",
+                "annotatedAt": "2026-01-01T00:00:00Z",
+                "reviewed": True,
+                "confidence": "high",
+            },
+        }
+        with self.assertRaises(ValueError):
+            validate_sample(sample)
+
+    def test_invalid_priority_tier_is_rejected(self):
+        sample = {
+            "schemaVersion": "cross-border-ecom-eval/v3",
+            "caseId": "x",
+            "sourceDataset": "self-curated",
+            "split": "eval",
+            "domain": "cross_border_ecommerce",
+            "category": "marketing_copy",
+            "priorityTier": "tertiary",
+            "difficulty": "easy",
+            "sourceLanguage": "zh",
+            "targetLanguage": "en",
+            "sourceText": "a",
+            "referenceText": "b",
+            "evaluationRules": {
+                "termMatchingMode": "contains",
+                "numberMatchingMode": "exact",
+                "allowUnitConversion": False,
+            },
+            "expectedTerms": [],
+            "expectedNumbersOrUnits": [],
+            "expectedProtectedTokens": [],
+            "criticalFailureRuleIds": [],
             "tags": [],
             "annotationMetadata": {
                 "annotator": "manual",

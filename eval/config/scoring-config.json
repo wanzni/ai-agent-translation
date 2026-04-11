@@ -1,4 +1,4 @@
-{
+﻿{
   "schemaVersion": "cross-border-ecom-eval-scoring/v1",
   "categories": {
     "product_title": {
@@ -12,6 +12,12 @@
       "numberAccuracy": 0.25,
       "protectedTokenRetention": 0.2,
       "criticalFailurePenalty": 0.15
+    },
+    "marketing_copy": {
+      "termAccuracy": 0.35,
+      "numberAccuracy": 0.1,
+      "protectedTokenRetention": 0.15,
+      "criticalFailurePenalty": 0.4
     },
     "customer_review": {
       "termAccuracy": 0.3,
